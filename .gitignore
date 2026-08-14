@@ -1,0 +1,19 @@
+.DS_Store
+Thumbs.db
+*.swp
+
+# 業務データを間違って commit しないための保険（README §2 の注意）
+*.dxf
+*.pdf
+*.zip
+*.tsproj
+*.json
+!manifest.webmanifest
+*.tif
+*.tiff
+*.HEIC
+*.heic
+*.jpg
+*.jpeg
+photos/
+export/
