@@ -226,11 +226,19 @@
     background-repeat:no-repeat;background-position:right 9px center;}
   .seg{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px 8px;font-size:12px;color:var(--muted);}
 
-  #tools{position:fixed;z-index:20;left:calc(10px + var(--safe-l));top:50%;transform:translateY(-50%);
+  /* v0.54: 縦中央（top:50% + translateY）だと、道具 10 + 色 6 + ＋ で高さが
+     約 740px になり、上のバーのボタンと下のバーの両方に重なった。
+     上のバーの下（#edge と同じ 60px 基準）から始め、下は max-height で止める。
+     max-height は 100vh ではなく 100%（position:fixed の基準は画面なので同じ意味だが、
+     iPadOS の 100vh の揺れを避ける）。 */
+  #tools{position:fixed;z-index:20;left:calc(10px + var(--safe-l));
+    top:calc(60px + var(--safe-t));
     display:flex;flex-direction:column;gap:6px;padding:7px;background:rgba(23,28,34,var(--railA));
     border:1px solid rgba(255,255,255,.10);border-radius:14px;
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
-    box-shadow:0 6px 22px rgba(0,0,0,.22);max-height:calc(100vh - 140px);overflow:auto;}
+    box-shadow:0 6px 22px rgba(0,0,0,.22);
+    max-height:calc(100% - 60px - 52px - var(--safe-t) - var(--safe-b));
+    overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
   .tbtn{width:44px;height:44px;min-height:44px;padding:0;justify-content:center;font-size:18px;border-radius:11px;}
   .tbtn b{font-size:18px;font-weight:800;}
   /* v0.39.2: ツールアイコンを単色の線画 SVG に刷新。currentColor なので
@@ -264,11 +272,16 @@
   .colBack{font-size:10px;color:var(--muted);line-height:1;}
   .sw.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.4) inset;}
 
-  #hud{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-    padding:7px calc(12px + var(--safe-r)) calc(7px + var(--safe-b)) calc(12px + var(--safe-l));
-    background:linear-gradient(to top,rgba(14,18,22,var(--hudA)),rgba(14,18,22,.40));
+  /* v0.54: 画面いっぱいの帯をやめて、左下の小さな札にする。
+     図面を隠す面積を減らし、ツールバーとも重ならない高さに収める。 */
+  #hud{position:fixed;left:calc(10px + var(--safe-l));right:auto;bottom:calc(8px + var(--safe-b));
+    z-index:20;display:inline-flex;align-items:center;gap:12px;flex-wrap:nowrap;width:auto;
+    max-width:calc(100% - 20px - var(--safe-l) - var(--safe-r));overflow:hidden;
+    padding:5px 11px;border-radius:12px;
+    background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
-    border-top:1px solid var(--line);font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted);}
+    border:1px solid var(--line);font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted);}
+  #hud .spacer{display:none;}   /* 幅が内容ぴったりになるので伸ばす余白は要らない */
   #hud .v{color:var(--txt);} #hud .k{color:var(--muted);}
   .gpsdot{width:9px;height:9px;border-radius:50%;background:#555;display:inline-block;margin-right:5px;vertical-align:-1px;}
   .gpsdot.fix{background:var(--ok);} .gpsdot.coarse{background:var(--warn);}
@@ -519,6 +532,17 @@
   #profPanel .fb{min-height:38px;padding:0 10px;justify-content:center;white-space:nowrap;}
   #cvProf{flex:1;width:100%;min-height:0;touch-action:none;border-radius:10px;margin:6px 0;}
   #profPanel .pFoot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  /* v0.54【不具合修正】撮影シートが表示されなかった真因。
+     #camSheet は class="sheet" に頼っていたが、`.sheet` という CSS は
+     どこにも定義されていなかった。display:none も .open も効かないため、
+     プレビューの入れ物が一度も表示されない（getUserMedia は成功していて
+     iPad の右上にカメラ使用中の表示だけが出る、という症状になる）。
+     他のシートと同じ形で #camSheet に直接与える。 */
+  #camSheet{position:fixed;inset:0;z-index:96;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;}
+  #camSheet.open{display:flex;}
+  #camSheet .box{width:min(560px,94vw);margin-bottom:calc(16px + var(--safe-b));background:var(--panel2);
+    border:1px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;}
+  #camSheet button{min-height:50px;font-size:15px;justify-content:center;}
   #pickSheet{position:fixed;inset:0;z-index:96;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;}
   #pickSheet.open{display:flex;}
   #pickSheet .box{width:min(440px,94vw);margin-bottom:calc(16px + var(--safe-b));background:var(--panel2);
@@ -803,7 +827,7 @@
 
 <input type="file" id="file" multiple class="hidden"
   accept=".pdf,.json,.geojson,.tif,.tiff,.png,.jpg,.jpeg,.tfw,.jgw,.pgw,.wld,.jpgw,.pngw,.tifw,.prj,.wkt">
-<div id="camSheet" class="sheet">
+<div id="camSheet"><!-- v0.54: class="sheet" は定義が無かったので外した -->
   <div class="box" style="max-width:560px;padding:10px">
     <div style="font-weight:700;margin-bottom:6px">📷 撮影</div>
     <video id="camVid" playsinline autoplay muted
@@ -2302,7 +2326,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.53';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.54';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2316,7 +2340,9 @@
     lastH:{},                     // ツール別の前回サイズ(text/leader=文字高さ, sym/photo=大きさ)
     V:{cx:0,cy:0,scale:1,rot:0}, rotLock:false, zoomLock:false, anchorIn:true,
     snap:true,   // 既存の線への吸着（v0.40）。既定は入
-    snapPx:14, snapStart:true, snapEnd:true, snapVertex:true, snapEndOnly:false,   // v0.41
+    // v0.54: 既定で効かせるのは「描き始め」と「折れ線の頂点」だけ（利用者の指定）。
+    // 描き終わりは意図せず前の線に吸われることが多いので既定は切る。設定シートで入れられる。
+    snapPx:14, snapStart:true, snapEnd:false, snapVertex:true, snapEndOnly:false,   // v0.41
     dimH:0, dimArrow:0.8, dimLwm:1, dimOff:1.2, dimLayer:4, dimPara:false,   // v0.44 寸法の設定
     eraseR:24, erasePart:false, eraseCur:null,   // v0.46 消しゴム（半径[px]・部分削除・表示位置）
                                   // dimH=0 は自動（画面 16px 相当）／dimLayer=4 は NOTE_BLACK（黒）
@@ -3277,7 +3303,8 @@
     if(o&&typeof o.format==='string'&&o.format.indexOf('TerrainSketch')===0){ loadProject(o); }
     else toast('サイドカー(.geo.json)はPDFと一緒に選択してください',true); }; r.readAsText(f); }
   function addRaster(r){ r.id=uid(); r.vis=(r.vis!==false); r.op=(r.op==null?1:r.op); S.rasters.push(r);
-    document.getElementById('hint').classList.add('hidden'); rebuildDrawer(); }
+    document.getElementById('hint').classList.add('hidden'); rebuildDrawer();
+    if(!r.restored) mapsDirty(); }   // v0.54: 背景地図も端末内に残す
   function afterAdd(note,zone,epsg){ if(zone){ S.Z=zone; syncZone(); } fitView(); hideLoad();
     toast((note?note+' / ':'')+(zone?('第'+zone+'系'):'系不明(手動選択)')+(epsg?' (EPSG:'+epsg+')':'')); }
 
@@ -3552,7 +3579,7 @@
   function nowMs(){ return (window.performance&&performance.now)?performance.now():Date.now(); }
   function uiBlocking(){
     var t=nowMs(); if(t-UIB.t<16) return UIB.v;
-    var ids=['modalBack','pickSheet','gpSheet','photoView','lineSheet','snapSheet','dimSheet','eraSheet','colSheet'], v=false;
+    var ids=['modalBack','pickSheet','gpSheet','photoView','lineSheet','snapSheet','dimSheet','eraSheet','colSheet','camSheet'], v=false;
     for(var i=0;i<ids.length;i++){ var el2=document.getElementById(ids[i]);
       if(el2&&getComputedStyle(el2).display!=='none'){ v=true; break; } }
     UIB.t=t; UIB.v=v; return v; }
@@ -4191,7 +4218,13 @@
     }).then(function(st){
       CAM.stream=st;
       var v=document.getElementById('camVid');
-      v.srcObject=st; v.play().catch(function(){});
+      // v0.54: iOS は最初の play() が失敗することがあるので、メタデータが
+      // そろった時点でもう一度鳴らす。playsinline は属性でも指定してあるが、
+      // 動的に差し替えられても効くようにここでも付ける。
+      try{ v.setAttribute('playsinline',''); v.muted=true; }catch(e){}
+      v.srcObject=st;
+      var kick=function(){ try{ v.play()['catch'](function(){}); }catch(e){} };
+      v.onloadedmetadata=kick; kick();
       camTick();
     }).catch(function(err){
       // 権限拒否・カメラ無し・iframe で camera 未許可 など。標準カメラへ退避する。
@@ -6578,7 +6611,8 @@
   function clearAllSketch(){
     if(confirm('線・文字・旗揚げ・記号・写真をすべて消去しますか？（背景地図は残ります）')){
       S.strokes=[];S.texts=[];S.leaders=[];S.symbols=[];S.photos=[];S.dims=[];
-      S.hist=[];S.rhist=[]; render(); rebuildDrawer(); } }
+      S.hist=[];S.rhist=[]; render(); rebuildDrawer();
+      flushAutosave(); } }   // v0.54: 消した状態を保存する（次の起動で戻ってこない）
   function applyProjectSketch(o){
     // v0.50: 色・名前・ACI も復元する。レイヤー表は添字が図形と結びついているので、
     // 保存時の並びをそのまま戻す（v0.49 以前の 4 番目=橙 のプロジェクトは橙のまま出る）。
@@ -6713,9 +6747,68 @@
   function idbGet(k,cb){ idbOpen(function(db){ if(!db){cb(null);return;} try{ var t=db.transaction('kv','readonly'), r=t.objectStore('kv').get(k);
       r.onsuccess=function(){ cb(r.result||null); }; r.onerror=function(){ cb(null); }; }catch(e){ cb(null); } }); }
   function idbDel(k){ idbOpen(function(db){ if(!db)return; try{ db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }); }
+  // v0.54: 別のアプリへ行って戻ったときに読み込み直さなくて済むように、
+  // 背景地図（描画結果）と表示位置も端末内に残す。
+  //   ・スケッチ + 表示位置 → 'autosave'（軽いので 2.5 秒デバウンス）
+  //   ・背景地図の画像     → 'maps'（重いので地図が増えたときと背面に回るときだけ）
+  // うまくいかないときは v0.53 までの動き（スケッチだけ・地図は手で開く）に落ちる。
+  var MAP_MAX=24*1024*1024;   // これを超える地図は保存しない（端末の容量を食い潰さない）
+  function viewNow(){ return {cx:S.V.cx,cy:S.V.cy,scale:S.V.scale,rot:S.V.rot}; }
+  function saveSketch(){
+    try{ if(!anyDrawing()&&!S.rasters.length) return;
+      idbSet('autosave',{ts:Date.now(),proj:buildProject({noRasters:true}),view:viewNow()});
+    }catch(e){} }
   var dirtyT=0;
-  function markDirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(function(){
-    try{ if(!anyDrawing())return; idbSet('autosave',{ts:Date.now(),proj:buildProject({noRasters:true})}); }catch(e){} },2500); }
+  function markDirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(saveSketch,2500); }
+  // 1 枚を Blob にする。作り直しは重いので覚えておく（地図は読み込み後に変わらない）
+  function rasterBlob(r,cb){
+    if(r._blob!==undefined){ cb(r._blob); return; }
+    if(!r.src||!r.src.toBlob){ r._blob=null; cb(null); return; }
+    try{ r.src.toBlob(function(b){
+        if(b&&b.size>MAP_MAX) b=null;    // 大きすぎる地図は諦める（従来どおり手で開く）
+        r._blob=b||null; cb(r._blob); },'image/png'); }
+    catch(e){ r._blob=null; cb(null); } }
+  function saveMaps(){
+    var rs=S.rasters.slice(), out=[], i=0;
+    if(!rs.length){ idbDel('maps'); return; }
+    (function next(){
+      if(i>=rs.length){ try{ idbSet('maps',{ts:Date.now(),items:out}); }catch(e){} return; }
+      var r=rs[i++];
+      rasterBlob(r,function(b){
+        if(b) out.push({name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,
+          epsg:r.epsg,zone:r.zone,vis:(r.vis!==false),op:(r.op==null?1:r.op),blob:b});
+        next(); }); })(); }
+  var mapsT=0;
+  function mapsDirty(){ clearTimeout(mapsT); mapsT=setTimeout(saveMaps,1500); }
+  // 背面に回る瞬間に待たずに書き出す（iOS は予告なくページを捨てることがある）
+  function flushAutosave(){ clearTimeout(dirtyT); clearTimeout(mapsT); saveSketch(); saveMaps(); }
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='hidden') flushAutosave(); });
+  window.addEventListener('pagehide',flushAutosave);
+  // 保存した地図を戻す。cb(戻せた枚数)
+  function restoreMaps(cb){
+    idbGet('maps',function(rec){
+      var items=(rec&&rec.items)||[], i=0, n=0;
+      if(!items.length){ cb(0); return; }
+      (function next(){
+        if(i>=items.length){ cb(n); return; }
+        var m=items[i++], url=null;
+        try{ url=URL.createObjectURL(m.blob); }catch(e){ next(); return; }
+        var img=new Image();
+        img.onload=function(){
+          try{ var c=document.createElement('canvas');
+            c.width=img.naturalWidth; c.height=img.naturalHeight;
+            c.getContext('2d').drawImage(img,0,0);
+            // 元データ（DEM の標高・GeoPDF の中身）は持たないので、
+            // 3D / 断面 / GeoPDF 追記は既存の案内どおり元ファイルの再読込が必要。
+            addRaster({kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,
+              xmax:m.xmax,ymax:m.ymax,epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),
+              op:m.op,rendered:true,src:c,restored:true});
+            n++; }catch(e){}
+          try{ URL.revokeObjectURL(url); }catch(e){}
+          next(); };
+        img.onerror=function(){ try{ URL.revokeObjectURL(url); }catch(e){} next(); };
+        img.src=url; })(); }); }
   function showRestore(rec){
     var n=(rec.proj.strokes||[]).length+(rec.proj.texts||[]).length+(rec.proj.leaders||[]).length+
           (rec.proj.symbols||[]).length+(rec.proj.photos||[]).length;
@@ -6757,10 +6850,26 @@
 
   // 起動
   symSizeLbl(); setTool('pen'); rebuildDrawer(); resize(); updateDemBadge();
-  idbGet('autosave',function(rec){ try{ if(rec&&rec.proj&&!anyDrawing()){
+  // v0.54: 前回の続きを**確認を挟まずに**戻す。別のアプリから戻るたびに
+  // 白図を開き直す手間をなくすため。作図を始めていたら触らない（従来のカードを出す）。
+  // 端末の空き容量が減ったときに消されにくくしておく（対応していない端末では何もしない）。
+  try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+  idbGet('autosave',function(rec){ try{
+    if(!rec||!rec.proj) return;
     var n=(rec.proj.strokes||[]).length+(rec.proj.texts||[]).length+(rec.proj.leaders||[]).length+
           (rec.proj.symbols||[]).length+(rec.proj.photos||[]).length;
-    if(n>0) showRestore(rec); } }catch(e){} });
+    if(anyDrawing()){ if(n>0) showRestore(rec); return; }   // 既に描いていたら上書きしない
+    applyProjectSketch(rec.proj);
+    restoreMaps(function(nm){
+      rebuildDrawer();
+      var v=rec.view;
+      if(v&&isFinite(v.scale)&&v.scale>0&&isFinite(v.cx)&&isFinite(v.cy)){
+        S.V.cx=+v.cx; S.V.cy=+v.cy; S.V.scale=+v.scale; S.V.rot=+v.rot||0;
+      } else if(nm||n) fitView();
+      render();
+      if(nm||n) toast('前回の続きを復元しました（要素 '+n+' 件'+(nm?(' / 地図 '+nm+' 枚'):'')+'）');
+      if(!nm&&(rec.proj.rasters||[]).length) toast('背景の白図は「開く」から読み込んでください',true);
+    }); }catch(e){} });
 })();
 </script>
 </body>
