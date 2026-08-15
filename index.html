@@ -237,7 +237,9 @@
     border:1px solid rgba(255,255,255,.10);border-radius:14px;
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
     box-shadow:0 6px 22px rgba(0,0,0,.22);
-    max-height:calc(100% - 60px - 52px - var(--safe-t) - var(--safe-b));
+    /* v0.57: 下は 52px → 84px。札の上にスケールを積むぶんの場所を空ける。
+       入り切らないときは縦スクロールするので、道具は失わない。 */
+    max-height:calc(100% - 60px - 84px - var(--safe-t) - var(--safe-b));
     overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
   .tbtn{width:44px;height:44px;min-height:44px;padding:0;justify-content:center;font-size:18px;border-radius:11px;}
   .tbtn b{font-size:18px;font-weight:800;}
@@ -274,8 +276,9 @@
 
   /* v0.54: 画面いっぱいの帯をやめて、左下の小さな札にする。
      図面を隠す面積を減らし、ツールバーとも重ならない高さに収める。 */
-  /* v0.56: 札は右下（利用者の指定）。左下はスケールバーに譲る。 */
-  #hud{position:fixed;right:calc(10px + var(--safe-r));left:auto;bottom:calc(8px + var(--safe-b));
+  /* v0.57: 札は画面の左下隅（利用者の指定）。隅に寄せるため余白も詰める。
+     スケールバーはこの札の真上に積む（drawScaleBar が札の位置を測って避ける）。 */
+  #hud{position:fixed;left:calc(6px + var(--safe-l));right:auto;bottom:calc(6px + var(--safe-b));
     z-index:20;display:inline-flex;align-items:center;gap:12px;flex-wrap:nowrap;width:auto;
     max-width:calc(100% - 20px - var(--safe-l) - var(--safe-r));overflow:hidden;
     padding:5px 11px;border-radius:12px;
@@ -2327,7 +2330,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.56';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.57';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3274,10 +3277,15 @@
       if(r&&r.height){
         var hit=function(bx,by){    // 棒（文字の高さ 13px を含む）が札に重なるか
           return bx<r.right && bx+w>r.left && by-13<r.bottom && by>r.top; };
-        x=14; y=r.bottom-6;                                        // ① 左下
+        x=14; y=r.bottom-6;                                        // ① 札と同じ帯（左下）
         if(hit(x,y)){
-          if(r.right+16+w<=cssW-14){ x=r.right+16; y=r.bottom-6; } // ② 札の右隣
-          else { x=14; y=r.top-8; }                                // ③ 札の上
+          // v0.57: 札が左下のときは**真上**へ積む（左端にそろえる）。
+          // 右隣へ逃がすとスケールが画面の中ほどに飛んでしまい、読み取りにくい。
+          y=r.top-8;
+          if(hit(x,y)){                                            // ② それでも当たるなら
+            if(r.right+16+w<=cssW-14){ x=r.right+16; y=r.bottom-6; } // ③ 札の右隣
+            else { x=14; y=r.top-8; }
+          }
         }
       } }
     function bars(col,lw){ ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.beginPath();
