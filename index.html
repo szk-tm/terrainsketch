@@ -154,10 +154,15 @@
     --chipAP:.74;     /* 上部の主ボタン（オレンジ） */
     --chipBlur:20px;  /* 背景ぼかし。透明度を上げたぶんこれで可読性を確保する */
     --railA:.62;      /* 左のツールレール（濃色） */
-    --hudA:.84;       /* 下部HUD（濃色） */
-    /* v0.58: 最下部ステータス帯の高さ。セーフエリアは帯の padding-bottom で別に足すので
-       ここには含めない。ツールバーの max-height もこの変数を見る（1 か所で決める）。 */
-    --statusH:30px;
+    /* 下部ステータス帯の不透明度。v0.59 で .84 -> .20 にしたが、
+       明るい地図の上で文字が読みにくいため、v0.60 で利用者の指定により .45 へ。
+       読みは backdrop-filter のぼかしと合わせて確保する。 */
+    --hudA:.45;       /* 下部ステータス帯 */
+    /* 最下部ステータス帯の高さ。セーフエリアは帯の padding-bottom で別に足すので
+       ここには含めない。ツールバーの max-height もこの変数を見る（1 か所で決める）。
+       v0.59: 利用者の指定で 30px -> 15px。内側は 15 - 1（上辺の罫線）= 14px なので、
+       #hud に line-height:1 を入れて 12px の行box を確実に収める。 */
+    --statusH:15px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--ink);
@@ -293,7 +298,7 @@
     border:0;border-top:1px solid var(--line);border-radius:0;
     background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
-    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted);}
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;line-height:1;color:var(--muted);}
   #hud .spacer{display:none;}   /* 左右の組で寄せるので、幅を伸ばす余白は要らない */
   #hud .v{color:var(--txt);} #hud .k{color:var(--muted);}
   /* 左の組（スケール）は縮めない。右の組（座標ほか）は狭いときだけ詰まる。 */
@@ -597,6 +602,10 @@
 <div id="top">
   <!-- 上部は「地図をどう見るか」だけ。入出力・設定は ☰ メニュー（低頻度）へ集約した -->
   <button class="primary" id="btnOpen">📂 開く</button>
+  <!-- v0.63: 開く と 戻る の間に保存（利用者の指定）。中身は ☰ の「スケッチ保存(.json)」と同じ。
+       v0.62 で .json が元ファイルの印まで持つようになり、1 タップで
+       「いまの状態をまるごと残す」操作になったので上部へ出した。 -->
+  <button class="ghost ico" id="btnSaveTop" title="保存（.json）— 地図・作図・設定・表示位置をまとめて残す" aria-label="保存">💾</button>
   <button class="ghost ico" id="btnUndo" title="元に戻す">↩︎</button>
   <button class="ghost ico" id="btnRedo" title="やり直す">↪︎</button>
   <div class="spacer"></div>
@@ -2352,7 +2361,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.58';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.63';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3374,6 +3383,10 @@
             return {pg:pg,geo:geo,title:title,wpt:vp.width,hpt:vp.height}; })); })(pg); }
           Promise.all(jobs).then(function(res){ var added=0, fz=null, fe=null, skipped=0;
             var doc={id:uid(),name:(file.name||'PDF'),bytes:new Uint8Array(buf),numPages:n,pages:[]};
+            // v0.62: 元ファイルを端末内に控える。.json はこの印だけを持つ
+            doc.srcId=srcIdOf(file); doc.srcName=(file.name||'source.pdf');
+            doc.srcMtime=(file.lastModified||0);
+            srcKeep(doc.srcId,doc.srcName,'pdf',doc.bytes,doc.srcMtime);
             res.forEach(function(o){ doc.pages[o.pg-1]={geo:o.geo||null,wpt:o.wpt,hpt:o.hpt}; });
             S.pdfDocs=S.pdfDocs||[]; S.pdfDocs.push(doc); var docId=doc.id;
             res.forEach(function(o){ if(!o.geo){ skipped++; return; }
@@ -3400,7 +3413,9 @@
       if(Math.max(vp1.width,vp1.height)*scale>maxDim) scale=maxDim/Math.max(vp1.width,vp1.height);
       var vp=page.getViewport({scale:scale}); var c=document.createElement('canvas'); c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
       page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
-        layer.src=c; layer.rendered=true; rebuildDrawer(); render(); hideLoad(); cb&&cb(); });
+        layer.src=c; layer.rendered=true; rebuildDrawer(); render(); hideLoad();
+        mapsDirty();   // v0.60: ここで予約しないと GeoPDF は永久に保存されない
+        cb&&cb(); });
     }).catch(function(err){ hideLoad(); toast('描画エラー: '+err.message,true); });
   }
   function georefSidecar(text,pageNo,wpt,hpt){ try{ var j=JSON.parse(text); var zone=(j.crs&&j.crs.zone)||null, epsg=(j.crs&&j.crs.epsg)||null;
@@ -3505,8 +3520,11 @@
   }catch(e){ return null; } }
 
   function loadGeoTiff(file,doneCb){ showLoad('GeoTIFFを解析中…'); var SRCB=null;
+    var SRCID=srcIdOf(file), SRCMT=(file.lastModified||0);   // v0.62
     function fin(){ if(doneCb){ var c=doneCb; doneCb=null; c(); } }
-    file.arrayBuffer().then(function(buf){ SRCB=new Uint8Array(buf); return GeoTIFF.fromArrayBuffer(buf); }).then(function(tf){ return tf.getImage(); }).then(function(image){
+    file.arrayBuffer().then(function(buf){ SRCB=new Uint8Array(buf);
+      srcKeep(SRCID,(file.name||'map.tif'),'tif',SRCB,SRCMT);   // v0.62
+      return GeoTIFF.fromArrayBuffer(buf); }).then(function(tf){ return tf.getImage(); }).then(function(image){
       var W=image.getWidth(),H=image.getHeight(), bbox=image.getBoundingBox();
       var gk=image.geoKeys||(image.getGeoKeys&&image.getGeoKeys())||{}, epsg=gk.ProjectedCSTypeGeoKey||gk.ProjectedCRSGeoKey||null;
       var geoEpsg=gk.GeographicTypeGeoKey||null, zone=zoneFromEpsg(epsg);
@@ -3548,6 +3566,7 @@
           // v0.23: GeoTIFF は非表示で追加する。DEM の陰影が白図に重なると 2D が見づらく、
           //   実際の用途は 3D 地形なので既定は非表示。activeDem() は vis を見ないので 3D は動く。
           addRaster({kind:'dem',name:(file.name||'DEM')+' (標高)',src:hs,dem:dem,srcBytes:SRCB,srcName:(file.name||'dem.tif'),
+                     srcId:SRCID,srcMtime:SRCMT,
                      xmin:xmin,ymin:ymin,xmax:xmax,ymax:ymax,epsg:epsg,zone:zone,rendered:true,op:0.9,vis:false});
           afterAdd('DEM '+dw+'×'+dh+' 標高'+Math.round(zmin)+'〜'+Math.round(zmax)+'m',zone,epsg); fin();
           toast('🏔 3D で地形を表示できます（2Dの陰影は ☰ レイヤーで表示）');
@@ -3563,7 +3582,8 @@
         if(!zone&&(geoEpsg===6668||geoEpsg===4326||(epsg&&+epsg===4326))){ var zz=S.Z; var p1=proj4('EPSG:4326','JPC:'+zz,[bbox[0],bbox[1]]),p2=proj4('EPSG:4326','JPC:'+zz,[bbox[2],bbox[3]]);
           xmin=Math.min(p1[0],p2[0]);xmax=Math.max(p1[0],p2[0]);ymin=Math.min(p1[1],p2[1]);ymax=Math.max(p1[1],p2[1]); zone=zz; epsg=null; }
         // v0.23: カラーGeoTIFF も非表示で追加（☰ レイヤーで表示に切替）
-        addRaster({kind:'tif',name:(file.name||'GeoTIFF'),src:c,srcBytes:SRCB,srcName:(file.name||'map.tif'),xmin:xmin,ymin:ymin,xmax:xmax,ymax:ymax,epsg:epsg,zone:zone,rendered:true,vis:false});
+        addRaster({kind:'tif',name:(file.name||'GeoTIFF'),src:c,srcBytes:SRCB,srcName:(file.name||'map.tif'),
+          srcId:SRCID,srcMtime:SRCMT,xmin:xmin,ymin:ymin,xmax:xmax,ymax:ymax,epsg:epsg,zone:zone,rendered:true,vis:false});
         afterAdd('GeoTIFF（非表示で追加・☰ レイヤーで表示）',zone,epsg); fin();
       }).catch(function(err){ hideLoad(); toast('ラスタ読込エラー: '+err.message,true); fin(); });
     }).catch(function(err){ hideLoad(); toast('GeoTIFFを開けません: '+err.message,true); fin(); });
@@ -4581,10 +4601,15 @@
   document.getElementById('btnUndo').onclick=undoStep;
   document.getElementById('btnRedo').onclick=redoStep;
   var histBtnState='';
-  function updateHistBtns(){ var k=(S.hist.length?'1':'0')+(S.rhist.length?'1':'0');
-    if(k===histBtnState)return; histBtnState=k;   // render 毎に呼ばれるので差分だけ反映
+  // v0.63: 保存ボタンの明暗もここで見る。render 毎に呼ばれるが、
+  // 元から「差分のときだけ反映」する作りなので追加の負荷はほぼない。
+  function updateHistBtns(){
+    var save=(anyDrawing()||S.rasters.length)?'1':'0';
+    var k=(S.hist.length?'1':'0')+(S.rhist.length?'1':'0')+save;
+    if(k===histBtnState)return; histBtnState=k;
     document.getElementById('btnUndo').classList.toggle('dim',!S.hist.length);
-    document.getElementById('btnRedo').classList.toggle('dim',!S.rhist.length); }
+    document.getElementById('btnRedo').classList.toggle('dim',!S.rhist.length);
+    document.getElementById('btnSaveTop').classList.toggle('dim',save==='0'); }
 
   // ---- ツールUI ----
   var TOOLBTN={pen:'tPen',line:'tLine',measure:'tMeas',text:'tText',leader:'tLeader',sym:'tSym',photo:'tPhoto',hatch:'tHatch',erase:'tErase',pan:'tPan'};
@@ -6644,13 +6669,24 @@
       layers:LAYERS.map(function(L){return {name:L.name,color:L.color,aci:L.aci,vis:L.vis,added:!!L.added};}),
       pal:palNorm(), symOrder:symOrderList(),   // v0.50 パレットの色と記号の並び
       photoLayerVis:PHOTOL.vis,
-      rasters:rs, sources:opts.sources||undefined, lwf:S.lwf,
+      // v0.62: 元ファイルの印。開くときにこれを頼りに端末内の控えを引き当てる
+      rasters:rs, sources:opts.sources||srcRefs(), lwf:S.lwf,
       lastH:S.lastH, symSize:S.symSize,   // ツール別の前回サイズも復元対象（毎回入れ直す手間を省く）
       dashOn:S.dash||undefined, dashM:S.dashM,   // 線スタイルの前回状態
       strokes:S.strokes, texts:S.texts, leaders:S.leaders, symbols:S.symbols, photos:phs,
+      // v0.61: 表示位置（中心・縮尺・回転）。これが無いと開いたとき必ず全体表示になり、
+      // 「保存当時の状態」に戻らなかった。無い古い保存は従来どおり全体表示に落ちる。
+      view:viewNow(),
       dims:S.dims }; }   // v0.45
-  document.getElementById('btnSave').onclick=function(){ showLoad('保存ファイルを作成中…'); setTimeout(function(){
-    shareOrDownload(fname('json'), JSON.stringify(buildProject()), 'application/json'); hideLoad(); },30); };
+  // v0.63: 上部バーの 💾 と ☰ の「スケッチ保存(.json)」は同じ処理を呼ぶ。
+  // 二重に書くと片方だけ直して食い違うので、必ずここを通す。
+  function saveProjectJson(){
+    if(!anyDrawing()&&!S.rasters.length){ toast('保存する内容がありません',true); return; }
+    showLoad('保存ファイルを作成中…'); setTimeout(function(){
+      shareOrDownload(fname('json'), JSON.stringify(buildProject()), 'application/json');
+      hideLoad(); },30); }
+  document.getElementById('btnSave').onclick=saveProjectJson;
+  document.getElementById('btnSaveTop').onclick=saveProjectJson;
   document.getElementById('btnLoad').onclick=function(){ document.getElementById('file').click(); };
   document.getElementById('btnClearAll').onclick=function(){ if(!anyDrawing())return;
     clearAllSketch(); };
@@ -6734,9 +6770,11 @@
     var entries=[], sources=[], used={};
     function uniq(nm){ var b=safeName(nm), n=b, i=2; while(used[n]){ n=b.replace(/(\.[^.]*)?$/,'_'+(i++)+'$1'); } used[n]=1; return n; }
     (S.pdfDocs||[]).forEach(function(d){ if(!d.bytes)return; var nm=uniq(d.name||'source.pdf');
-      entries.push({name:'sources/'+nm,data:d.bytes}); sources.push({file:'sources/'+nm,kind:'pdf',name:d.name}); });
+      entries.push({name:'sources/'+nm,data:d.bytes});
+      sources.push({file:'sources/'+nm,kind:'pdf',name:d.name,id:d.srcId,mtime:d.srcMtime}); });
     S.rasters.forEach(function(r){ if(!r.srcBytes)return; var nm=uniq(r.srcName||(r.kind==='dem'?'dem.tif':'map.tif'));
-      entries.push({name:'sources/'+nm,data:r.srcBytes}); sources.push({file:'sources/'+nm,kind:'tif',name:r.name}); });
+      entries.push({name:'sources/'+nm,data:r.srcBytes});
+      sources.push({file:'sources/'+nm,kind:'tif',name:r.name,id:r.srcId,mtime:r.srcMtime}); });
     S.photos.forEach(function(ph){ if(ph.img) entries.push({name:'photos/'+pno(ph)+'.jpg',data:dataUrlToU8(ph.img)}); });
     var proj=buildProject({stripPhotos:true, noPngSourced:true, sources:sources});
     entries.unshift({name:'project.json',data:strU8(JSON.stringify(proj))});
@@ -6764,9 +6802,11 @@
       S.photos.forEach(function(ph){ if(!ph.img){ var en=map['photos/'+pno(ph)+'.jpg'];
         if(en&&en.data){ try{ ph.img=u8ToDataUrl(en.data,'image/jpeg'); }catch(e3){} } } });
       var srcs=(o.sources||[]).filter(function(sc){ return map[sc.file]&&map[sc.file].data; });
-      function restoreState(){ (o.rasters||[]).forEach(function(m){ S.rasters.forEach(function(r){
-          if(r.name===m.name){ r.vis=(m.vis!==false); r.op=(m.op==null?1:m.op); } }); });
-        rebuildDrawer(); render(); if(!S.rasters.length)fitView(); hideLoad();
+      function restoreState(){ applyRasterState(o);   // v0.62: loadProject と共通
+        // v0.61: 元データの読み直しで afterAdd が fitView() を呼ぶので、
+        // 表示位置は**最後に**当てる。
+        if(!applyView(o.view)&&!S.rasters.length) fitView();
+        rebuildDrawer(); render(); hideLoad();
         toast('バンドルを復元しました（地図'+S.rasters.length+'・写真'+S.photos.length+'件）'); }
       if(!srcs.length){ // 地図はPNGメタから復元(旧形式互換)
         var metas=(o.rasters||[]).filter(function(m){return m.png;});
@@ -6794,6 +6834,54 @@
   function idbGet(k,cb){ idbOpen(function(db){ if(!db){cb(null);return;} try{ var t=db.transaction('kv','readonly'), r=t.objectStore('kv').get(k);
       r.onsuccess=function(){ cb(r.result||null); }; r.onerror=function(){ cb(null); }; }catch(e){ cb(null); } }); }
   function idbDel(k){ idbOpen(function(db){ if(!db)return; try{ db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }); }
+  // ---- v0.62: 元ファイルの控え（端末内） ----
+  // 利用者の求めは「.json にパスを書いておき、開いたら自動で読み直す」だが、
+  // ブラウザはファイルのパスを扱えない。<input type=file> の File は名前しか持たず、
+  // Safari は macOS/iPadOS/iOS のいずれでも showOpenFilePicker を実装していない。
+  // そこで **元ファイルの中身そのものを端末内に控え**、.json には
+  // 「どのファイルか」を指す印だけを書く。開くときは印で控えを引き当てて
+  // File を作り直し、loadGeoPdf / loadGeoTiff に渡す（バンドルと同じ経路なので、
+  // 3D 地形・地形断面・GeoPDF 追記まで完全に戻る）。
+  var SRC_MAX=64*1024*1024;       // 1 ファイルの上限。これを超える元ファイルは控えない
+  var SRC_BUDGET=256*1024*1024;   // 控え全体の上限。超えたら古いものから捨てる
+  // 同じファイルなら何度読んでも同じ印になる。中身の要約ではなく名前・大きさ・
+  // 更新日時にしてあるのは、20MB の要約計算で読み込みを待たせないため。
+  function srcIdOf(file){
+    return String((file&&file.name)||'file')+'|'+((file&&file.size)||0)+
+           '|'+((file&&file.lastModified)||0); }
+  function srcKeep(id,name,kind,bytes,mtime){
+    if(!id||!bytes||!bytes.length||bytes.length>SRC_MAX) return;
+    try{ idbSet('src:'+id,{id:id,name:name,kind:kind,mtime:mtime||0,bytes:bytes}); }catch(e){ return; }
+    // 控えの一覧（軽い）を別に持ち、合計が上限を超えたら古いものから捨てる
+    idbGet('srcidx',function(rec){
+      var list=(rec&&rec.list)||[], out=[], tot=bytes.length, i, e;
+      out.push({id:id,name:name,kind:kind,size:bytes.length,ts:Date.now()});
+      for(i=0;i<list.length;i++){ e=list[i];
+        if(!e||!e.id||e.id===id) continue;
+        if(tot+e.size>SRC_BUDGET){ idbDel('src:'+e.id); continue; }
+        tot+=e.size; out.push(e); }
+      try{ idbSet('srcidx',{list:out}); }catch(e2){} }); }
+  // 印の一覧を順に引き当てる。cb(見つかったものの表, 見つからなかった印の配列)
+  function srcFetch(refs,cb){
+    var map={}, missing=[], i=0;
+    (function next(){
+      if(i>=refs.length){ cb(map,missing); return; }
+      var rf=refs[i++];
+      idbGet('src:'+rf.id,function(rec){
+        if(rec&&rec.bytes&&rec.bytes.length) map[rf.id]=rec; else missing.push(rf);
+        next(); }); })(); }
+  // いま開いている元ファイルの印。保存(.json)に書き出す
+  function srcRefs(){ var out=[], seen={};
+    function put(id,kind,file,name,mtime){
+      if(!id||seen[id]) return; seen[id]=1;
+      out.push({id:id,kind:kind,file:file,name:name,mtime:mtime||0}); }
+    (S.pdfDocs||[]).forEach(function(d){ put(d.srcId,'pdf',d.srcName||d.name,d.name,d.srcMtime); });
+    S.rasters.forEach(function(r){ if(r.srcBytes) put(r.srcId,'tif',r.srcName||r.name,r.name,r.srcMtime); });
+    return out.length?out:undefined; }
+  // 保存してあった表示/非表示・不透明度を、名前を頼りに戻す（読み直しの後に当てる）
+  function applyRasterState(o){
+    (o.rasters||[]).forEach(function(m){ S.rasters.forEach(function(r){
+      if(r.name===m.name){ r.vis=(m.vis!==false); r.op=(m.op==null?1:m.op); } }); }); }
   // v0.54: 別のアプリへ行って戻ったときに読み込み直さなくて済むように、
   // 背景地図（描画結果）と表示位置も端末内に残す。
   //   ・スケッチ + 表示位置 → 'autosave'（軽いので 2.5 秒デバウンス）
@@ -6810,17 +6898,27 @@
   // 1 枚を Blob にする。作り直しは重いので覚えておく（地図は読み込み後に変わらない）
   function rasterBlob(r,cb){
     if(r._blob!==undefined){ cb(r._blob); return; }
-    if(!r.src||!r.src.toBlob){ r._blob=null; cb(null); return; }
+    // v0.60: 「まだ描けていない」と「そもそも保存できない」を区別する。
+    // 従来はここで r._blob=null を焼き付けていたので、あとから src が入っても
+    // 二度と保存されなかった（GeoPDF が復元されない真因）。
+    if(!r.src||!r.src.toBlob){ cb(null); return; }
     try{ r.src.toBlob(function(b){
         if(b&&b.size>MAP_MAX) b=null;    // 大きすぎる地図は諦める（従来どおり手で開く）
         r._blob=b||null; cb(r._blob); },'image/png'); }
     catch(e){ r._blob=null; cb(null); } }
   function saveMaps(){
-    var rs=S.rasters.slice(), out=[], i=0;
+    var rs=S.rasters.slice(), out=[], i=0, pend=0;
     if(!rs.length){ idbDel('maps'); return; }
     (function next(){
-      if(i>=rs.length){ try{ idbSet('maps',{ts:Date.now(),items:out}); }catch(e){} return; }
+      if(i>=rs.length){
+        // v0.60: 1 枚も出来ていないのに書くと、前回保存した地図まで消してしまう。
+        // 描画待ちがあるなら、書かずに改めて予約する（PDF は座標化のあとに描かれる）。
+        if(!out.length&&pend){ mapsDirty(); return; }
+        if(pend) mapsDirty();
+        try{ idbSet('maps',{ts:Date.now(),items:out}); }catch(e){}
+        return; }
       var r=rs[i++];
+      if(!r.rendered||!r.src){ pend++; next(); return; }   // まだ描けていない
       rasterBlob(r,function(b){
         if(b) out.push({name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,
           epsg:r.epsg,zone:r.zone,vis:(r.vis!==false),op:(r.op==null?1:r.op),blob:b});
@@ -6833,29 +6931,49 @@
     if(document.visibilityState==='hidden') flushAutosave(); });
   window.addEventListener('pagehide',flushAutosave);
   // 保存した地図を戻す。cb(戻せた枚数)
+  // v0.60: PNG のデコードは createImageBitmap が使えればそちら（別スレッドで走る）。
+  // 使えない端末では従来どおり Image + ObjectURL に落ちる。
+  function blobToCanvas(blob,cb){
+    var put=function(img,w,h){
+      try{ var c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.getContext('2d').drawImage(img,0,0); cb(c); }catch(e){ cb(null); } };
+    function viaImg(){ var url=null;
+      try{ url=URL.createObjectURL(blob); }catch(e1){ cb(null); return; }
+      var img=new Image();
+      img.onload=function(){ put(img,img.naturalWidth,img.naturalHeight);
+        try{ URL.revokeObjectURL(url); }catch(e2){} };
+      img.onerror=function(){ try{ URL.revokeObjectURL(url); }catch(e3){} cb(null); };
+      img.src=url; }
+    if(window.createImageBitmap){
+      try{ createImageBitmap(blob).then(function(bm){
+          put(bm,bm.width,bm.height); try{ bm.close(); }catch(e4){} })
+        .catch(function(){ viaImg(); });
+        return; }catch(e5){} }
+    viaImg(); }
+  // 保存した地図を戻す。cb(戻せた枚数)
+  // v0.60: 1 枚ずつ順番に待たず、まとめてデコードして着いた順に描く。
+  // 並びは保存時のままにしたいので、先に器（src が空のラスタ）を順に並べておいて
+  // 中身だけ後から入れる。render は !r.src のとき描かないので、器があっても落ちない。
   function restoreMaps(cb){
     idbGet('maps',function(rec){
-      var items=(rec&&rec.items)||[], i=0, n=0;
+      var items=(rec&&rec.items)||[];
       if(!items.length){ cb(0); return; }
-      (function next(){
-        if(i>=items.length){ cb(n); return; }
-        var m=items[i++], url=null;
-        try{ url=URL.createObjectURL(m.blob); }catch(e){ next(); return; }
-        var img=new Image();
-        img.onload=function(){
-          try{ var c=document.createElement('canvas');
-            c.width=img.naturalWidth; c.height=img.naturalHeight;
-            c.getContext('2d').drawImage(img,0,0);
-            // 元データ（DEM の標高・GeoPDF の中身）は持たないので、
-            // 3D / 断面 / GeoPDF 追記は既存の案内どおり元ファイルの再読込が必要。
-            addRaster({kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,
-              xmax:m.xmax,ymax:m.ymax,epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),
-              op:m.op,rendered:true,src:c,restored:true});
-            n++; }catch(e){}
-          try{ URL.revokeObjectURL(url); }catch(e){}
-          next(); };
-        img.onerror=function(){ try{ URL.revokeObjectURL(url); }catch(e){} next(); };
-        img.src=url; })(); }); }
+      // 元データ（DEM の標高・GeoPDF の中身）は持たないので、
+      // 3D / 断面 / GeoPDF 追記は既存の案内どおり元ファイルの再読込が必要。
+      var slots=[], k, m, r;
+      for(k=0;k<items.length;k++){ m=items[k];
+        r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,
+          xmax:m.xmax,ymax:m.ymax,epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),
+          op:m.op,rendered:true,src:null,restored:true};
+        addRaster(r); slots.push(r); }
+      var left=items.length, n=0;
+      items.forEach(function(mm,i){
+        blobToCanvas(mm.blob,function(c){
+          if(c){ slots[i].src=c; n++; renderSoon(); }
+          if(--left<=0){
+            // デコードできなかった器は残さない
+            S.rasters=S.rasters.filter(function(x){ return slots.indexOf(x)<0||!!x.src; });
+            cb(n); } }); }); }); }
   function showRestore(rec){
     var n=(rec.proj.strokes||[]).length+(rec.proj.texts||[]).length+(rec.proj.leaders||[]).length+
           (rec.proj.symbols||[]).length+(rec.proj.photos||[]).length;
@@ -6868,14 +6986,75 @@
       if(!S.rasters.length&&anyDrawing())fitView();
       toast('前回のスケッチを復元しました'); };
     document.getElementById('restoreNo').onclick=function(){ card.classList.remove('open'); idbDel('autosave'); }; }
+  // v0.61: 保存してあれば表示位置（中心・縮尺・回転）を戻す。戻せたら true。
+  function applyView(v){
+    if(!v||!isFinite(v.scale)||!(v.scale>0)||!isFinite(v.cx)||!isFinite(v.cy)) return false;
+    S.V.cx=+v.cx; S.V.cy=+v.cy; S.V.scale=+v.scale; S.V.rot=+v.rot||0; return true; }
+  // v0.61: 地図の重ね順を保存時のまま戻す。
+  // 従来は Image の onload の**到着順**に addRaster していたので、2 枚以上あると
+  // 大きい白図と小さい図が入れ替わって重なることがあった（デコードの速さは大きさで変わる）。
+  // v0.60 で restoreMaps に入れたのと同じく、器を先に順に並べて中身だけ後から入れる。
   function loadProject(o){ showLoad('プロジェクトを復元中…');
     try{ applyProjectSketch(o); S.rasters=[]; S.pdfDocs=[];
-      var metas=Array.isArray(o.rasters)?o.rasters:[], pending=metas.length;
-      var done=function(){ if(--pending<=0){ rebuildDrawer(); document.getElementById('hint').classList.add('hidden'); fitView(); hideLoad(); toast('プロジェクトを読み込みました'); } };
-      if(!metas.length){ rebuildDrawer(); fitView(); hideLoad(); toast('プロジェクトを読み込みました(地図なし)'); return; }
-      metas.forEach(function(m){ var r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,xmax:m.xmax,ymax:m.ymax,epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),op:(m.op==null?1:m.op),rendered:true,src:null};
-        if(m.png){ var img=new Image(); img.onload=function(){ var c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext('2d').drawImage(img,0,0); r.src=c; addRaster(r); done(); }; img.onerror=function(){ addRaster(r); done(); }; img.src=m.png; }
-        else { addRaster(r); done(); } });
+      var hadView=applyView(o.view);
+      var metas=Array.isArray(o.rasters)?o.rasters:[];
+      // v0.62: 元ファイルの印があれば、端末内の控えから読み直して完全復元する。
+      // 印はブラウザが扱えないパスの代わり。詳しくは srcKeep の説明を参照。
+      var refs=[];
+      if(Array.isArray(o.sources)) o.sources.forEach(function(sc){ if(sc&&sc.id) refs.push(sc); });
+      if(refs.length){ srcFetch(refs,function(map,missing){
+          if(missing.length){ pngRestore(missing); return; }   // 控えが無い → 画像で表示
+          showLoad('元ファイルを読み直しています…');
+          var i=0;
+          (function next(){
+            if(i>=refs.length){ srcFinish(); return; }
+            var rf=refs[i++], rec=map[rf.id];
+            var base=String(rf.file||rec.name||'source').split('/').pop();
+            var f;
+            try{ f=new File([rec.bytes],base,
+              {type:(rf.kind==='pdf')?'application/pdf':'image/tiff',lastModified:rec.mtime||0}); }
+            catch(e3){ f=new Blob([rec.bytes]); f.name=base; }
+            if(rf.kind==='pdf') loadGeoPdf(f,null,next); else loadGeoTiff(f,next); })();
+        }); return; }
+      pngRestore(null);
+
+      // 元ファイルから読み直したあとの仕上げ
+      function srcFinish(){
+        applyRasterState(o);
+        // 読み直しの途中で afterAdd が fitView() を呼ぶので、表示位置は最後に当て直す
+        if(hadView) applyView(o.view);
+        rebuildDrawer(); document.getElementById('hint').classList.add('hidden');
+        render(); hideLoad(); mapsDirty();
+        toast('元ファイルから復元しました（地図 '+S.rasters.length+' 枚・3D と断面も使えます）'); }
+
+      // 控えが無い／印を持たない保存は、これまでどおり保存された PNG で背景を出す。
+      // 地図の重ね順は器を先に並べて保つ（v0.61）。
+      function pngRestore(missing){
+        var fin=function(n){
+          rebuildDrawer(); document.getElementById('hint').classList.add('hidden');
+          if(!hadView) fitView();
+          render(); hideLoad(); mapsDirty();
+          toast('プロジェクトを読み込みました'+(metas.length?('（地図 '+n+' 枚）'):'（地図なし）'));
+          if(missing&&missing.length) setTimeout(function(){
+            var nm=missing.map(function(x){ return String(x.file||x.name||'').split('/').pop(); }).join('・');
+            toast('元ファイルの控えが端末内にありません（'+nm+'）。背景は保存された画像で表示しています。3D・断面・GeoPDF追記を使うには元ファイルを「開く」で読み込んでください',true); },1200); };
+        if(!metas.length){ fin(0); return; }
+        var slots=[], k, m, r;
+        for(k=0;k<metas.length;k++){ m=metas[k];
+          r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,xmax:m.xmax,ymax:m.ymax,
+            epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),op:(m.op==null?1:m.op),rendered:true,src:null};
+          addRaster(r); slots.push(r); }
+        var left=metas.length, n=0;
+        metas.forEach(function(mm,i){
+          if(!mm.png){ if(--left<=0) fin(n); return; }
+          var img=new Image();
+          img.onload=function(){
+            try{ var c=document.createElement('canvas');
+              c.width=img.naturalWidth; c.height=img.naturalHeight;
+              c.getContext('2d').drawImage(img,0,0); slots[i].src=c; n++; renderSoon(); }catch(e2){}
+            if(--left<=0) fin(n); };
+          img.onerror=function(){ if(--left<=0) fin(n); };
+          img.src=mm.png; }); }
     }catch(e){ hideLoad(); toast('復元に失敗しました: '+e.message,true); }
   }
 
@@ -6907,12 +7086,14 @@
           (rec.proj.symbols||[]).length+(rec.proj.photos||[]).length;
     if(anyDrawing()){ if(n>0) showRestore(rec); return; }   // 既に描いていたら上書きしない
     applyProjectSketch(rec.proj);
+    // v0.60: 表示位置は地図のデコードより**先**に戻す。
+    // 復元は着いた順に描くので、あとから位置を直すと途中経過が違う場所に出る。
+    var v=rec.view, hadView=false;
+    if(v&&isFinite(v.scale)&&v.scale>0&&isFinite(v.cx)&&isFinite(v.cy)){
+      S.V.cx=+v.cx; S.V.cy=+v.cy; S.V.scale=+v.scale; S.V.rot=+v.rot||0; hadView=true; }
     restoreMaps(function(nm){
       rebuildDrawer();
-      var v=rec.view;
-      if(v&&isFinite(v.scale)&&v.scale>0&&isFinite(v.cx)&&isFinite(v.cy)){
-        S.V.cx=+v.cx; S.V.cy=+v.cy; S.V.scale=+v.scale; S.V.rot=+v.rot||0;
-      } else if(nm||n) fitView();
+      if(!hadView&&(nm||n)) fitView();
       render();
       if(nm||n) toast('前回の続きを復元しました（要素 '+n+' 件'+(nm?(' / 地図 '+nm+' 枚'):'')+'）');
       if(!nm&&(rec.proj.rasters||[]).length) toast('背景の白図は「開く」から読み込んでください',true);
