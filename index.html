@@ -155,6 +155,9 @@
     --chipBlur:20px;  /* 背景ぼかし。透明度を上げたぶんこれで可読性を確保する */
     --railA:.62;      /* 左のツールレール（濃色） */
     --hudA:.84;       /* 下部HUD（濃色） */
+    /* v0.58: 最下部ステータス帯の高さ。セーフエリアは帯の padding-bottom で別に足すので
+       ここには含めない。ツールバーの max-height もこの変数を見る（1 か所で決める）。 */
+    --statusH:30px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--ink);
@@ -237,9 +240,11 @@
     border:1px solid rgba(255,255,255,.10);border-radius:14px;
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
     box-shadow:0 6px 22px rgba(0,0,0,.22);
-    /* v0.57: 下は 52px → 84px。札の上にスケールを積むぶんの場所を空ける。
+    /* v0.58: スケールをステータス帯に取り込んだので、下に空ける量は
+       「帯の高さ + 10px」だけでよくなった。v0.57 は 84px 空けていたから、
+       道具の入る高さが 44px（ボタン 1 個ぶん）増える。
        入り切らないときは縦スクロールするので、道具は失わない。 */
-    max-height:calc(100% - 60px - 84px - var(--safe-t) - var(--safe-b));
+    max-height:calc(100% - 60px - 10px - var(--statusH) - var(--safe-t) - var(--safe-b));
     overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
   .tbtn{width:44px;height:44px;min-height:44px;padding:0;justify-content:center;font-size:18px;border-radius:11px;}
   .tbtn b{font-size:18px;font-weight:800;}
@@ -274,19 +279,34 @@
   .colBack{font-size:10px;color:var(--muted);line-height:1;}
   .sw.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.4) inset;}
 
-  /* v0.54: 画面いっぱいの帯をやめて、左下の小さな札にする。
-     図面を隠す面積を減らし、ツールバーとも重ならない高さに収める。 */
-  /* v0.57: 札は画面の左下隅（利用者の指定）。隅に寄せるため余白も詰める。
-     スケールバーはこの札の真上に積む（drawScaleBar が札の位置を測って避ける）。 */
-  #hud{position:fixed;left:calc(6px + var(--safe-l));right:auto;bottom:calc(6px + var(--safe-b));
-    z-index:20;display:inline-flex;align-items:center;gap:12px;flex-wrap:nowrap;width:auto;
-    max-width:calc(100% - 20px - var(--safe-l) - var(--safe-r));overflow:hidden;
-    padding:5px 11px;border-radius:12px;
+  /* v0.58: 画面最下部に横幅いっぱいのステータス帯を置く（利用者の指定）。
+     左端にスケール（#hudL）、右端に座標・1px あたりの長さ・系・GPS（#hudR）。
+     この 2 つは flex の兄弟なので **重なりようがない**。v0.55〜v0.57 の
+     「札の矩形を測ってスケールを逃がす」処理はここで役目を終えた（JS 側も削除）。
+     高さは --statusH。セーフエリアは padding-bottom で足すので、
+     地の色は画面の下端まで届き、帯の中身はセーフエリアの上に載る。 */
+  #hud{position:fixed;left:0;right:0;bottom:0;z-index:20;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap;
+    width:auto;max-width:none;overflow:hidden;
+    height:calc(var(--statusH) + var(--safe-b));
+    padding:0 calc(12px + var(--safe-r)) var(--safe-b) calc(12px + var(--safe-l));
+    border:0;border-top:1px solid var(--line);border-radius:0;
     background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
-    border:1px solid var(--line);font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted);}
-  #hud .spacer{display:none;}   /* 幅が内容ぴったりになるので伸ばす余白は要らない */
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted);}
+  #hud .spacer{display:none;}   /* 左右の組で寄せるので、幅を伸ばす余白は要らない */
   #hud .v{color:var(--txt);} #hud .k{color:var(--muted);}
+  /* 左の組（スケール）は縮めない。右の組（座標ほか）は狭いときだけ詰まる。 */
+  #hudL{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
+  #hudR{display:flex;align-items:center;gap:12px;flex:1 1 auto;min-width:0;
+    justify-content:flex-end;white-space:nowrap;overflow:hidden;}
+  #hudR>span{flex:0 0 auto;}
+  /* スケールは「棒」と「見出し」の 2 つ。棒は左右の縦棒と下の横棒（border で作る）。
+     幅は drawScaleBar が style.width に入れる。 */
+  #scale{display:flex;align-items:center;gap:7px;flex:0 0 auto;}
+  #scaleBar{display:block;height:7px;width:0;flex:0 0 auto;
+    border:2px solid var(--txt);border-top:0;}
+  #scaleLab{color:var(--txt);white-space:nowrap;}
   .gpsdot{width:9px;height:9px;border-radius:50%;background:#555;display:inline-block;margin-right:5px;vertical-align:-1px;}
   .gpsdot.fix{background:var(--ok);} .gpsdot.coarse{background:var(--warn);}
 
@@ -606,12 +626,14 @@
 </div>
 
 <div id="hud">
-  <span><span class="k">X</span> <span class="v" id="hX">—</span></span>
-  <span><span class="k">Y</span> <span class="v" id="hY">—</span></span>
-  <span><span class="k">px≈</span><span class="v" id="hScale">—</span><span class="k">m</span></span>
-  <span><span class="k">系</span> <span class="v" id="hZone">9</span></span>
-  <span class="spacer"></span>
-  <span><span class="gpsdot" id="gDot"></span><span class="v" id="hGps">GPS停止</span></span>
+  <span id="hudL"><span id="scale"><span id="scaleBar"></span><span id="scaleLab">—</span></span></span>
+  <span id="hudR">
+    <span><span class="k">X</span> <span class="v" id="hX">—</span></span>
+    <span><span class="k">Y</span> <span class="v" id="hY">—</span></span>
+    <span><span class="k">px≈</span><span class="v" id="hScale">—</span><span class="k">m</span></span>
+    <span><span class="k">系</span> <span class="v" id="hZone">9</span></span>
+    <span><span class="gpsdot" id="gDot"></span><span class="v" id="hGps">GPS停止</span></span>
+  </span>
 </div>
 
 <button id="gpsPlace" class="primary">📍 現在地に配置</button>
@@ -2330,7 +2352,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.57';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.58';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3260,41 +3282,33 @@
   // スケールバーの目安の長さ[px]。niceLen が 1/2/5 に丸めるので、
   // 実際の棒はこの 0.5〜1.0 倍になる（v0.55: 90 → 180 で読み取りやすくした）。
   var SCALE_TARGET_PX=180;
-  function drawScaleBar(){ if(!S.V.scale||!isFinite(S.V.scale))return;
-    var t=SCALE_TARGET_PX/S.V.scale; if(!isFinite(t)||t<=0)return;
-    var m=niceLen(t), w=m*S.V.scale, x=14, y=cssH-58;
-    // v0.55: 座標の札との重なりを避ける。
-    // 従来は cssH - parseFloat(--safe-b) - 58 で置いていたが、--safe-b の中身は
-    // env(safe-area-inset-bottom,0px) という文字列なので parseFloat が NaN になり、
-    // セーフエリアが 0 として扱われていた（札は CSS 側で env() が効くのでずれる）。
-    // 固定値で逃がすとまた端末差で重なるので、札の実際の位置を測って右隣に並べる。
-    // v0.56: 札は右下に移したので、スケールは左下（本来の位置）に置ける。
-    // ただし決め打ちにはしない。札の実際の矩形と当たり判定をして、
-    //   ① 左下（札と同じ高さの帯） → ② 札の右隣 → ③ 札の上
-    // の順に逃がす。札の位置を将来また変えても、ここは直さなくて済む。
-    var hud=document.getElementById('hud');
-    if(hud){ var r=hud.getBoundingClientRect();
-      if(r&&r.height){
-        var hit=function(bx,by){    // 棒（文字の高さ 13px を含む）が札に重なるか
-          return bx<r.right && bx+w>r.left && by-13<r.bottom && by>r.top; };
-        x=14; y=r.bottom-6;                                        // ① 札と同じ帯（左下）
-        if(hit(x,y)){
-          // v0.57: 札が左下のときは**真上**へ積む（左端にそろえる）。
-          // 右隣へ逃がすとスケールが画面の中ほどに飛んでしまい、読み取りにくい。
-          y=r.top-8;
-          if(hit(x,y)){                                            // ② それでも当たるなら
-            if(r.right+16+w<=cssW-14){ x=r.right+16; y=r.bottom-6; } // ③ 札の右隣
-            else { x=14; y=r.top-8; }
-          }
-        }
-      } }
-    function bars(col,lw){ ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.beginPath();
-      ctx.moveTo(x,y); ctx.lineTo(x,y-7); ctx.moveTo(x,y); ctx.lineTo(x+w,y); ctx.moveTo(x+w,y); ctx.lineTo(x+w,y-7); ctx.stroke(); }
-    bars('rgba(255,255,255,.92)',5); bars('rgba(25,32,40,.95)',2);
-    var lb=(m>=1000?(m/1000)+' km':m+' m');
-    ctx.font='700 11px ui-monospace,monospace'; ctx.textBaseline='bottom';
-    ctx.strokeStyle='rgba(255,255,255,.92)'; ctx.lineWidth=3; ctx.strokeText(lb,x+4,y-2);
-    ctx.fillStyle='rgba(25,32,40,.95)'; ctx.fillText(lb,x+4,y-2); }
+  // v0.58: 棒の長さの決め方だけを取り出した純関数。描画も DOM も触らないので
+  // テストからそのまま呼べる（§3.4）。戻り値は
+  //   {m: 丸めた長さ[m], w: 棒の長さ[px], label: 見出しの文字}
+  // 値が決まらないとき（縮尺が未設定など）は null を返す。
+  function scaleBarSpec(scale){
+    if(!scale||!isFinite(scale)||scale<=0) return null;
+    var t=SCALE_TARGET_PX/scale; if(!isFinite(t)||t<=0) return null;
+    var m=niceLen(t); if(!isFinite(m)||m<=0) return null;
+    var w=m*scale; if(!isFinite(w)||w<=0) return null;
+    return { m:m, w:w, label:(m>=1000?(m/1000)+' km':m+' m') };
+  }
+  // v0.58: スケールは最下部のステータス帯の左端に出す（canvas ではなく DOM）。
+  // 座標の組は同じ帯の右端にあり、両者は flex の兄弟なので重なりようがない。
+  // v0.55〜v0.57 の「札の矩形を測って逃がす」処理はここで不要になったので消した。
+  // 再描画のたびに呼ばれるので、見た目が変わるときだけ DOM を書く。
+  var SCALE_SIG='';
+  function drawScaleBar(){
+    var b=document.getElementById('scaleBar'), l=document.getElementById('scaleLab');
+    if(!b||!l) return;
+    var sp=scaleBarSpec(S.V.scale);
+    var sig=sp?(Math.round(sp.w)+'|'+sp.label):'';
+    if(sig===SCALE_SIG) return;
+    SCALE_SIG=sig;
+    if(!sp){ b.style.width='0px'; l.textContent='—'; return; }
+    b.style.width=Math.round(sp.w)+'px';
+    l.textContent=sp.label;
+  }
   function updateHud(){ document.getElementById('hZone').textContent=S.Z;
     var spm=(S.V.scale&&isFinite(S.V.scale))?(1/S.V.scale):0; document.getElementById('hScale').textContent=spm?spm.toFixed(spm<1?2:1):'—'; }
 
