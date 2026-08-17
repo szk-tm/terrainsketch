@@ -288,13 +288,13 @@
      左端にスケール（#hudL）、右端に座標・1px あたりの長さ・系・GPS（#hudR）。
      この 2 つは flex の兄弟なので **重なりようがない**。v0.55〜v0.57 の
      「札の矩形を測ってスケールを逃がす」処理はここで役目を終えた（JS 側も削除）。
-     高さは --statusH。セーフエリアは padding-bottom で足すので、
-     地の色は画面の下端まで届き、帯の中身はセーフエリアの上に載る。 */
-  #hud{position:fixed;left:0;right:0;bottom:0;z-index:20;
+     高さは --statusH のみ。セーフエリアぶんは bottom で持ち上げ、
+     地の色は帯（15px）だけに載せ、下端は透かして描画領域を広く取る（v0.65・A案）。 */
+  #hud{position:fixed;left:0;right:0;bottom:var(--safe-b);z-index:20;
     display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap;
     width:auto;max-width:none;overflow:hidden;
-    height:calc(var(--statusH) + var(--safe-b));
-    padding:0 calc(12px + var(--safe-r)) var(--safe-b) calc(12px + var(--safe-l));
+    height:var(--statusH);
+    padding:0 calc(12px + var(--safe-r)) 0 calc(12px + var(--safe-l));
     border:0;border-top:1px solid var(--line);border-radius:0;
     background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
@@ -789,9 +789,9 @@
   <div id="mDirWrap" style="display:none;">
     <div class="frow"><label>撮影方位</label>
       <input type="number" id="dirIn" step="1" min="0" max="359" placeholder="なし"> <span style="color:var(--muted);font-size:12px">°（北0・時計回り）</span>
-      <div class="frowD" style="margin-top:6px"><label>俯角</label>
+      <div class="frowD" style="margin-top:6px"><label>俯仰角</label>
         <input type="number" id="pitchIn" step="1" min="-90" max="90" placeholder="なし">
-        <span style="color:var(--muted);font-size:12px">°（下向き正）<span id="dirSrcLbl" class="muted2"></span></span></div>
+        <span style="color:var(--muted);font-size:12px">°（見上げ + / 見下ろし −）<span id="dirSrcLbl" class="muted2"></span></span></div>
     </div>
     <div class="dialWrap">
       <canvas id="dial" width="140" height="140"></canvas>
@@ -2361,7 +2361,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.64';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.65';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -4302,7 +4302,7 @@
   //     vy =   cosA·sinB·cosG - sinA·sinG
   //     vz = -cosB·cosG
   //   方位 = atan2(vx, vy)  （北0・時計回り）
-  //   俯角 = -asin(vz/|v|)  （下向き正）
+  //   仰俯角 = asin(vz/|v|)  （見上げ正・見下ろし負）
   //
   // alpha は iOS では絶対方位ではないため、webkitCompassHeading（真北から時計回り）
   // から alpha = 360 - heading として与える。
@@ -4317,10 +4317,10 @@
     var vz=-cb*cg;
     var hor=Math.sqrt(vx*vx+vy*vy);
     // 真上/真下を向いている場合は方位が定義できない
-    if(hor<1e-6) return {az:null,pitch:(vz>0?-90:90)};
+    if(hor<1e-6) return {az:null,pitch:(vz>0?90:-90)};
     var az=Math.atan2(vx,vy)/D; if(az<0)az+=360;
     var len=Math.sqrt(hor*hor+vz*vz);
-    var pitch=-Math.asin(vz/len)/D;
+    var pitch=Math.asin(vz/len)/D;
     return {az:az,pitch:pitch};
   }
   // ---- アプリ内カメラ（v0.37）------------------------------------------------
@@ -4390,7 +4390,7 @@
       if(!a||a.az==null) el2.textContent=(S.heading.val==null)
         ? '方位センサーが未取得（撮影後に手入力できます）'
         : 'ほぼ真下/真上を向いています（方位なし）';
-      else el2.textContent='方位 '+Math.round(applyDecl(a.az))+'° ／ 俯角 '+Math.round(a.pitch)+'°';
+      else el2.textContent='方位 '+Math.round(applyDecl(a.az))+'° ／ 俯仰角 '+Math.round(a.pitch)+'°';
     }
     CAM.raf=setTimeout(camTick,200);
   }
@@ -4490,7 +4490,7 @@
       openModal('photo',S.photos.length-1,null);
       var lbl={live:'撮影時の方位 ',EXIF:'EXIF方位 ',compass:'方位(参考) '}[r0.src]||'方位 ';
       toast(pno(ph)+' を追加'+(r0.hd!=null
-        ?('（'+lbl+Math.round(r0.hd)+'°'+(r0.pitch!=null?(' 俯角 '+Math.round(r0.pitch)+'°'):'')+'）')
+        ?('（'+lbl+Math.round(r0.hd)+'°'+(r0.pitch!=null?(' 俯仰角 '+Math.round(r0.pitch)+'°'):'')+'）')
         :'（方位なし・手入力できます）')); }); }
   document.getElementById('photoInput').onchange=pickHandler;
   function tapView(px,py){ var pi=hitPhoto(px,py); if(pi>=0){ openPhotoView(S.photos[pi]); return; }
@@ -6917,7 +6917,12 @@
       q.onupgradeneeded=function(){ try{ q.result.createObjectStore('kv'); }catch(e){} };
       q.onsuccess=function(){ cb(q.result); }; q.onerror=function(){ cb(null); };
     }catch(e){ cb(null); } }
-  function idbSet(k,v){ idbOpen(function(db){ if(!db)return; try{ var t=db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); }catch(e){} }); }
+  function idbSet(k,v,cb){ idbOpen(function(db){ if(!db){ if(cb)cb(false); return; }
+    try{ var t=db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k);
+      t.oncomplete=function(){ if(cb)cb(true); };
+      t.onerror=function(){ if(cb)cb(false); };
+      t.onabort=function(){ if(cb)cb(false); };
+    }catch(e){ if(cb)cb(false); } }); }
   function idbGet(k,cb){ idbOpen(function(db){ if(!db){cb(null);return;} try{ var t=db.transaction('kv','readonly'), r=t.objectStore('kv').get(k);
       r.onsuccess=function(){ cb(r.result||null); }; r.onerror=function(){ cb(null); }; }catch(e){ cb(null); } }); }
   function idbDel(k){ idbOpen(function(db){ if(!db)return; try{ db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }); }
@@ -6937,17 +6942,26 @@
     return String((file&&file.name)||'file')+'|'+((file&&file.size)||0)+
            '|'+((file&&file.lastModified)||0); }
   function srcKeep(id,name,kind,bytes,mtime){
-    if(!id||!bytes||!bytes.length||bytes.length>SRC_MAX) return;
-    try{ idbSet('src:'+id,{id:id,name:name,kind:kind,mtime:mtime||0,bytes:bytes}); }catch(e){ return; }
-    // 控えの一覧（軽い）を別に持ち、合計が上限を超えたら古いものから捨てる
-    idbGet('srcidx',function(rec){
-      var list=(rec&&rec.list)||[], out=[], tot=bytes.length, i, e;
-      out.push({id:id,name:name,kind:kind,size:bytes.length,ts:Date.now()});
-      for(i=0;i<list.length;i++){ e=list[i];
-        if(!e||!e.id||e.id===id) continue;
-        if(tot+e.size>SRC_BUDGET){ idbDel('src:'+e.id); continue; }
-        tot+=e.size; out.push(e); }
-      try{ idbSet('srcidx',{list:out}); }catch(e2){} }); }
+    if(!id||!bytes||!bytes.length) return;
+    if(bytes.length>SRC_MAX){ toast('元ファイルが大きすぎて端末に控えられません（'+Math.round(bytes.length/1048576)+'MB）。別端末で復元するにはバンドル.zipを使ってください',true); return; }
+    // iOS Safari は生の TypedArray を IndexedDB に取りこぼすことがあるため Blob で格納する。
+    var blob; try{ blob=new Blob([bytes]); }catch(e0){ return; }
+    var sz=blob.size;
+    idbSet('src:'+id,{id:id,name:name,kind:kind,mtime:mtime||0,bytes:blob,size:sz},function(okw){
+      if(!okw){ toast('この端末は元ファイルを控えられませんでした。別端末で復元するにはバンドル.zipを使ってください',true); return; }
+      // 書けたことを読み戻して確かめる（無言の失敗をなくす）
+      idbGet('src:'+id,function(chk){
+        if(!chk||!chk.bytes||!(chk.bytes.size||chk.bytes.length)){
+          toast('元ファイルの控えを確認できませんでした。復元にはバンドル.zipを使ってください',true); return; }
+        // 控えの一覧（軽い）を更新し、合計が上限を超えたら古いものから捨てる
+        idbGet('srcidx',function(rec){
+          var list=(rec&&rec.list)||[], out=[], tot=sz, i, e;
+          out.push({id:id,name:name,kind:kind,size:sz,ts:Date.now()});
+          for(i=0;i<list.length;i++){ e=list[i];
+            if(!e||!e.id||e.id===id) continue;
+            if(tot+e.size>SRC_BUDGET){ idbDel('src:'+e.id); continue; }
+            tot+=e.size; out.push(e); }
+          idbSet('srcidx',{list:out}); }); }); }); }
   // 印の一覧を順に引き当てる。cb(見つかったものの表, 見つからなかった印の配列)
   function srcFetch(refs,cb){
     var map={}, missing=[], i=0;
@@ -6955,7 +6969,7 @@
       if(i>=refs.length){ cb(map,missing); return; }
       var rf=refs[i++];
       idbGet('src:'+rf.id,function(rec){
-        if(rec&&rec.bytes&&rec.bytes.length) map[rf.id]=rec; else missing.push(rf);
+        if(rec&&rec.bytes&&(rec.bytes.size||rec.bytes.length)) map[rf.id]=rec; else missing.push(rf);
         next(); }); })(); }
   // いま開いている元ファイルの印。保存(.json)に書き出す
   function srcRefs(){ var out=[], seen={};
