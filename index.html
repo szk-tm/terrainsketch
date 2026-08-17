@@ -288,13 +288,14 @@
      左端にスケール（#hudL）、右端に座標・1px あたりの長さ・系・GPS（#hudR）。
      この 2 つは flex の兄弟なので **重なりようがない**。v0.55〜v0.57 の
      「札の矩形を測ってスケールを逃がす」処理はここで役目を終えた（JS 側も削除）。
-     高さは --statusH のみ。セーフエリアぶんは bottom で持ち上げ、
-     地の色は帯（15px）だけに載せ、下端は透かして描画領域を広く取る（v0.65・A案）。 */
-  #hud{position:fixed;left:0;right:0;bottom:var(--safe-b);z-index:20;
+     高さは 15px の帯 + セーフエリアぶん。帯は最下部（bottom:0）まで伸ばし、
+     文字は上側 15px に置く（padding-bottom でセーフエリアを地色で埋める）。
+     v0.65 A案で空いた下端の隙間をなくす（v0.66）。 */
+  #hud{position:fixed;left:0;right:0;bottom:0;z-index:20;
     display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap;
     width:auto;max-width:none;overflow:hidden;
-    height:var(--statusH);
-    padding:0 calc(12px + var(--safe-r)) 0 calc(12px + var(--safe-l));
+    height:calc(var(--statusH) + var(--safe-b));
+    padding:0 calc(12px + var(--safe-r)) var(--safe-b) calc(12px + var(--safe-l));
     border:0;border-top:1px solid var(--line);border-radius:0;
     background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
@@ -2361,7 +2362,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.65';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.66';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -6943,16 +6944,17 @@
            '|'+((file&&file.lastModified)||0); }
   function srcKeep(id,name,kind,bytes,mtime){
     if(!id||!bytes||!bytes.length) return;
-    if(bytes.length>SRC_MAX){ toast('元ファイルが大きすぎて端末に控えられません（'+Math.round(bytes.length/1048576)+'MB）。別端末で復元するにはバンドル.zipを使ってください',true); return; }
+    if(bytes.length>SRC_MAX){ idbSet('srcmiss:'+id,{reason:'toobig',size:bytes.length,ts:Date.now()}); toast('元ファイルが大きすぎて端末に控えられません（'+Math.round(bytes.length/1048576)+'MB）。別端末で復元するにはバンドル.zipを使ってください',true); return; }
     // iOS Safari は生の TypedArray を IndexedDB に取りこぼすことがあるため Blob で格納する。
     var blob; try{ blob=new Blob([bytes]); }catch(e0){ return; }
     var sz=blob.size;
     idbSet('src:'+id,{id:id,name:name,kind:kind,mtime:mtime||0,bytes:blob,size:sz},function(okw){
-      if(!okw){ toast('この端末は元ファイルを控えられませんでした。別端末で復元するにはバンドル.zipを使ってください',true); return; }
+      if(!okw){ idbSet('srcmiss:'+id,{reason:'writefail',size:sz,ts:Date.now()}); toast('この端末は元ファイルを控えられませんでした。別端末で復元するにはバンドル.zipを使ってください',true); return; }
       // 書けたことを読み戻して確かめる（無言の失敗をなくす）
       idbGet('src:'+id,function(chk){
         if(!chk||!chk.bytes||!(chk.bytes.size||chk.bytes.length)){
-          toast('元ファイルの控えを確認できませんでした。復元にはバンドル.zipを使ってください',true); return; }
+          idbSet('srcmiss:'+id,{reason:'verifyfail',size:sz,ts:Date.now()}); toast('元ファイルの控えを確認できませんでした。復元にはバンドル.zipを使ってください',true); return; }
+        idbDel('srcmiss:'+id);   // v0.66: 成功したので過去の失敗記録を消す
         // 控えの一覧（軽い）を更新し、合計が上限を超えたら古いものから捨てる
         idbGet('srcidx',function(rec){
           var list=(rec&&rec.list)||[], out=[], tot=sz, i, e;
@@ -6971,6 +6973,42 @@
       idbGet('src:'+rf.id,function(rec){
         if(rec&&rec.bytes&&(rec.bytes.size||rec.bytes.length)) map[rf.id]=rec; else missing.push(rf);
         next(); }); })(); }
+  // v0.66: 控えが使えないとき、実機で真因が分かるよう診断を添える。
+  //   ・大きすぎ / 書けなかった / 確認できなかった は srcKeep が 'srcmiss:<印>' に残している。
+  //   ・鍵の有無（なし＝消えた or 元々控えていない、あり(空)＝Blob 取りこぼしの疑い）。
+  //   ・保存量 / 上限 / 永続化 は Storage API から。元ファイルの大きさが効くかがここで判る。
+  function srcMB(n){ return (n==null)?'?':(Math.round(n/104857.6)/10)+'MB'; }
+  function srcMissMsg(name,note,usage,quota,persisted,keyState){
+    var why;
+    if(note&&note.reason==='toobig') why='（'+srcMB(note.size)+'で上限 64MB 超のため控えていません）';
+    else if(note&&note.reason==='writefail') why='（保存に失敗していました）';
+    else if(note&&note.reason==='verifyfail') why='（保存の確認に失敗していました）';
+    else if(keyState==='あり(空)') why='（控えが空でした。iPadOS が Blob を取りこぼした可能性）';
+    else why='（控えが残っていません。iPadOS が消したか、この保存には控えが無いかです）';
+    return '元ファイルの控えが使えません（'+name+'）'+why
+      +'。保存 '+srcMB(usage)+' / 上限 '+srcMB(quota)
+      +'・永続化'+(persisted===true?'済':(persisted===false?'未':'不明'))
+      +'。背景は保存画像で表示中。確実な復元はバンドル.zip を使ってください';
+  }
+  function cacheDiag(missing,cb){
+    var m=(missing&&missing[0])||null, id=m&&m.id;
+    var name=(missing||[]).map(function(x){ return String(x.file||x.name||'').split('/').pop(); }).join('・');
+    var keyState='なし', note=null;
+    function report(){
+      var fin=function(u,q,p){ cb(srcMissMsg(name,note,u,q,p,keyState)); };
+      try{
+        if(navigator.storage&&navigator.storage.estimate){
+          navigator.storage.estimate().then(function(e){
+            if(navigator.storage.persisted){ navigator.storage.persisted().then(function(v){ fin(e.usage,e.quota,v); },function(){ fin(e.usage,e.quota,null); }); }
+            else fin(e.usage,e.quota,null);
+          },function(){ fin(null,null,null); });
+        } else fin(null,null,null);
+      }catch(e){ fin(null,null,null); }
+    }
+    if(!id){ report(); return; }
+    idbGet('srcmiss:'+id,function(nn){ note=nn||null;
+      idbGet('src:'+id,function(rec){ if(rec) keyState=(rec.bytes&&(rec.bytes.size||rec.bytes.length))?'あり':'あり(空)'; report(); }); });
+  }
   // いま開いている元ファイルの印。保存(.json)に書き出す
   function srcRefs(){ var out=[], seen={};
     function put(id,kind,file,name,mtime){
@@ -7138,8 +7176,7 @@
           render(); hideLoad(); mapsDirty();
           toast('プロジェクトを読み込みました'+(metas.length?('（地図 '+n+' 枚）'):'（地図なし）'));
           if(missing&&missing.length) setTimeout(function(){
-            var nm=missing.map(function(x){ return String(x.file||x.name||'').split('/').pop(); }).join('・');
-            toast('元ファイルの控えが端末内にありません（'+nm+'）。背景は保存された画像で表示しています。3D・断面・GeoPDF追記を使うには元ファイルを「開く」で読み込んでください',true); },1200); };
+            cacheDiag(missing,function(msg){ toast(msg,true); }); },1200); };
         if(!metas.length){ fin(0); return; }
         var slots=[], k, m, r;
         for(k=0;k<metas.length;k++){ m=metas[k];
