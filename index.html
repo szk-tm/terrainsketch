@@ -2361,7 +2361,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.63';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.64';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2409,6 +2409,52 @@
     return [S.V.cx+u/s, S.V.cy-v/s]; }
   // 回転を含まないスクリーン座標。ラスタ描画はキャンバス変換で回すのでこちらを使う。
   function w2s0(x,y){ return [cssW/2+(x-S.V.cx)*S.V.scale, cssH/2-(y-S.V.cy)*S.V.scale]; }
+
+  // ---- v0.64: 上が真北でない地図のためのアフィン変換 ----
+  // 「元の単位 -> world(E,N)」を 6 つの数で表す。
+  //     X = a*u + b*v + c ,  Y = d*u + e*v + f
+  // 軸並行の地図では b=d=0 になるだけなので、傾きの有無で処理を分けなくて済む。
+  function affApply(m,u,v){ return [m.a*u+m.b*v+m.c, m.d*u+m.e*v+m.f]; }
+  function affInv(m){ if(!m)return null; var det=m.a*m.e-m.b*m.d;
+    if(!det||!isFinite(det))return null;
+    return {a:m.e/det, b:-m.b/det, c:(m.b*m.f-m.e*m.c)/det,
+            d:-m.d/det, e:m.a/det, f:(m.d*m.c-m.a*m.f)/det}; }
+  // 縮尺（world m / 元単位）。傾いていても正しい長さを返す。
+  function affScale(m){ if(!m)return 1;
+    return (Math.sqrt(m.a*m.a+m.d*m.d)+Math.sqrt(m.b*m.b+m.e*m.e))/2; }
+  // 傾いているか（軸並行なら b と d がほぼ 0）
+  function affTilted(m){ return !!m &&
+    (Math.abs(m.b)+Math.abs(m.d)) > (Math.abs(m.a)+Math.abs(m.e))*1e-6; }
+  // 図面の「上」が真北から何度ずれているか（度・反時計回りが負）。案内文に使う。
+  // **y が上向きの変換（ページ座標）用**。画像画素のように y が下向きの変換に
+  // 当てると 180° ずれるので注意（v064test ①で規約を固定してある）。
+  function affNorthDeg(m){ if(!m)return 0;
+    return Math.round(Math.atan2(m.b,m.e)*180/Math.PI*10)/10; }
+  // ラスタの画像画素(px 右, py 下, 原点は左上) -> world。
+  // aff を持たない（軸並行・古い保存）ラスタは外接矩形から作る。
+  function rasterAff(r){
+    if(r.aff) return r.aff;
+    var W=(r.src&&r.src.width)||1, H=(r.src&&r.src.height)||1;
+    return {a:(r.xmax-r.xmin)/W, b:0, c:r.xmin, d:0, e:-(r.ymax-r.ymin)/H, f:r.ymax}; }
+  // PDF のページ座標(pt・原点は左下・y 上向き) -> world から、画像画素 -> world を作る。
+  //   x = px*(wpt/iw) ,  y = hpt - py*(hpt/ih)
+  function affFromPage(pg,wpt,hpt,iw,ih){
+    if(!pg||!wpt||!hpt||!iw||!ih) return null;
+    var kx=wpt/iw, ky=hpt/ih;
+    return {a:pg.a*kx, b:-pg.b*ky, c:pg.b*hpt+pg.c,
+            d:pg.d*kx, e:-pg.e*ky, f:pg.e*hpt+pg.f}; }
+  // 軸並行の図郭からページ座標 -> world を作る（サイドカーや全文走査で得た地図用）
+  function pageAffFromBox(g,wpt,hpt){
+    return {a:(g.xmax-g.xmin)/(wpt||1), b:0, c:g.xmin,
+            d:0, e:(g.ymax-g.ymin)/(hpt||1), f:g.ymin}; }
+  // 画像を「画素 -> world」のアフィンで貼る。回転や傾きのある地図もこれ 1 本で扱える。
+  // 画面の回転(S.V.rot)は呼び出し側がキャンバス変換で与えている（w2s0 と対）。
+  function drawAff(img,m,s){ if(!img||!m)return;
+    ctx.save();
+    ctx.transform(s*m.a, -s*m.d, s*m.b, -s*m.e,
+      cssW/2+s*(m.c-S.V.cx), cssH/2-s*(m.f-S.V.cy));
+    try{ ctx.drawImage(img,0,0); }catch(e){}
+    ctx.restore(); }
   // world 点(wx,wy)を screen 点(px,py)に一致させるよう S.V.cx/cy を決める（パン/ズーム/回転の共通軸）
   function anchorTo(wx,wy,px,py){ var a=S.V.rot||0, sx=px-cssW/2, sy=py-cssH/2, u, v;
     if(!a){ u=sx; v=sy; } else { var ca=Math.cos(a), sa=Math.sin(a); u=sx*ca+sy*sa; v=-sx*sa+sy*ca; }
@@ -2622,11 +2668,12 @@
       else if(ONLY_RASTER){ if(r!==ONLY_RASTER)return; }
       else if(!r.vis)return;
       if(!r.src)return;
-      var tl=w2s0(r.xmin,r.ymax), br=w2s0(r.xmax,r.ymin);
-      ctx.globalAlpha=al; try{ ctx.drawImage(r.src,tl[0],tl[1],br[0]-tl[0],br[1]-tl[1]); }catch(e){}
+      // v0.64: 軸並行の drawImage をやめ、「画素 -> world」のアフィンで貼る。
+      // 上が真北でない GeoPDF も、傾いたまま正しい位置に載る。
+      ctx.globalAlpha=al;
+      drawAff(r.src,rasterAff(r),S.V.scale);
       var hi=EXPORTING?r.__exp:r.patch;
-      if(hi&&hi.canvas){ var ptl=w2s0(hi.xmin,hi.ymax), pbr=w2s0(hi.xmax,hi.ymin);
-        try{ ctx.drawImage(hi.canvas,ptl[0],ptl[1],pbr[0]-ptl[0],pbr[1]-ptl[1]); }catch(e2){} }
+      if(hi&&hi.canvas&&hi.aff) drawAff(hi.canvas,hi.aff,S.V.scale);
       ctx.globalAlpha=1; });
     if(ROT) ctx.restore();
     function pathOf(P,close){ ctx.beginPath();
@@ -2750,22 +2797,35 @@
       a.push(r.kind,r.vis?1:0,r.rendered?1:0,r.pdf?1:0,r.pageNo||0); }
     return a.join('|'); }
   function schedulePatches(){ clearTimeout(patchTimer); patchTimer=setTimeout(updatePatches,200); }
+  // v0.64: 可視範囲(world)の 4 隅をアフィンの逆でページ座標に戻し、その外接矩形を切り出す。
+  // 傾いた地図では切り出しがやや広めになるが、位置と向きは正確。
+  // 戻り値の aff は「出来上がるキャンバスの画素 -> world」。
   function patchGeom(r,vw,scalePxPerM,dpr,cap){
-    if(!r.pageWpt||!r.src)return null;
+    if(!r.pageWpt||!r.pageHpt||!r.src)return null;
     cap=cap||2732;
-    var ix0=Math.max(vw.xmin,r.xmin), ix1=Math.min(vw.xmax,r.xmax);
-    var iy0=Math.max(vw.ymin,r.ymin), iy1=Math.min(vw.ymax,r.ymax);
-    if(ix1-ix0<=0||iy1-iy0<=0)return null;
-    var ptPerM=r.pageWpt/(r.xmax-r.xmin);
-    var need=scalePxPerM*dpr/ptPerM, base=r.src.width/r.pageWpt;
+    var pg=r.pgAff||pageAffFromBox(r,r.pageWpt,r.pageHpt);
+    var inv=affInv(pg); if(!inv)return null;
+    var C=[[vw.xmin,vw.ymin],[vw.xmax,vw.ymin],[vw.xmax,vw.ymax],[vw.xmin,vw.ymax]];
+    var px0=1e30,px1=-1e30,py0=1e30,py1=-1e30, i, p;
+    for(i=0;i<4;i++){ p=affApply(inv,C[i][0],C[i][1]);
+      px0=Math.min(px0,p[0]); px1=Math.max(px1,p[0]);
+      py0=Math.min(py0,p[1]); py1=Math.max(py1,p[1]); }
+    px0=Math.max(0,px0); py0=Math.max(0,py0);
+    px1=Math.min(r.pageWpt,px1); py1=Math.min(r.pageHpt,py1);
+    if(px1-px0<=0||py1-py0<=0)return null;
+    var mPerPt=affScale(pg);                      // world m / page pt（傾いていても正しい）
+    var need=scalePxPerM*dpr*mPerPt, base=r.src.width/r.pageWpt;
     if(need<=base*1.25)return null;
     var sc=Math.min(need,64);
-    var px0=(ix0-r.xmin)*ptPerM, px1=(ix1-r.xmin)*ptPerM;
-    var py0=(iy0-r.ymin)*ptPerM, py1=(iy1-r.ymin)*ptPerM;
     var cw=Math.ceil((px1-px0)*sc), ch=Math.ceil((py1-py0)*sc);
-    if(Math.max(cw,ch)>cap){ var k=cap/Math.max(cw,ch); sc*=k; cw=Math.ceil((px1-px0)*sc); ch=Math.ceil((py1-py0)*sc); }
+    if(Math.max(cw,ch)>cap){ var k=cap/Math.max(cw,ch); sc*=k;
+      cw=Math.ceil((px1-px0)*sc); ch=Math.ceil((py1-py0)*sc); }
     if(cw<8||ch<8)return null;
-    return {ix0:ix0,iy0:iy0,ix1:ix1,iy1:iy1,px0:px0,py1:py1,sc:sc,cw:cw,ch:ch};
+    // pdf.js は offsetX/offsetY 付きで (x,y) を ((x-px0)*sc, (py1-y)*sc) に写す。
+    // その逆を pg に合成すると、キャンバス画素 -> world が出る。
+    var aff={a:pg.a/sc, b:-pg.b/sc, c:pg.a*px0+pg.b*py1+pg.c,
+             d:pg.d/sc, e:-pg.e/sc, f:pg.d*px0+pg.e*py1+pg.f};
+    return {px0:px0,py1:py1,sc:sc,cw:cw,ch:ch,aff:aff};
   }
   function updatePatches(){ if(EXPORTING)return;
     var gen=++patchGen, made=0;
@@ -2786,7 +2846,7 @@
         var c=document.createElement('canvas'); c.width=g.cw; c.height=g.ch;
         return page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
           if(gen!==patchGen)return;
-          r.patch={canvas:c,xmin:g.ix0,ymin:g.iy0,xmax:g.ix1,ymax:g.iy1,sig:sig};
+          r.patch={canvas:c,aff:g.aff,sig:sig};
           render(); });
       }).catch(function(){});
     });
@@ -3393,11 +3453,21 @@
               var nm=(o.title?o.title:name)+(n>1?(' p.'+o.pg):'');
               addRaster({kind:'pdf',name:nm,pdf:pdf,pageNo:o.pg,docId:docId,
                 xmin:o.geo.xmin,ymin:o.geo.ymin,xmax:o.geo.xmax,ymax:o.geo.ymax,epsg:o.geo.epsg,zone:o.geo.zone,
+                // v0.64: ページ座標 -> world。サイドカーや全文走査で得た軸並行の地図は
+                // 図郭から作る（以後どちらも同じ道を通る）。
+                pgAff:(o.geo.pgAff||pageAffFromBox(o.geo,o.wpt,o.hpt)),
                 src:null,rendered:false,vis:(added===0)});
               added++; if(added===1){ fz=o.geo.zone; fe=o.geo.epsg; } });
             if(!added){ hideLoad(); toast('座標情報を抽出できませんでした。.geo.json を併せて選択してください。',true); fin(); return; }
             var first=S.rasters.filter(function(r){return r.vis&&r.kind==='pdf'&&!r.rendered;})[0];
             renderPdfLayer(first,function(){
+              // v0.64: 上が真北でない地図は、そのことを一度だけ伝える。
+              // 画面は北を上にするので、図面自体が傾いて見えるのが正しい。
+              var tl=null;
+              res.forEach(function(o){ if(!tl&&o.geo&&affTilted(o.geo.pgAff)) tl=o.geo.pgAff; });
+              if(tl) setTimeout(function(){
+                toast('この地図は上が真北ではありません（上方向が真北から '+affNorthDeg(tl)+
+                      '°）。画面は北を上にして、傾いたまま正しい位置に配置しました'); },700);
               afterAdd(n>1?('PDF '+added+'ページを座標化'+(skipped?('・座標なし'+skipped+'ページは除外'):'')):'GeoPDF', fz, fe); fin(); });
           });
         }).catch(function(err){ hideLoad(); toast('PDFを開けません: '+err.message,true); fin(); });
@@ -3413,7 +3483,10 @@
       if(Math.max(vp1.width,vp1.height)*scale>maxDim) scale=maxDim/Math.max(vp1.width,vp1.height);
       var vp=page.getViewport({scale:scale}); var c=document.createElement('canvas'); c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
       page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
-        layer.src=c; layer.rendered=true; rebuildDrawer(); render(); hideLoad();
+        layer.src=c; layer.rendered=true;
+        // v0.64: 描画寸法がここで決まるので、ページアフィンから画素アフィンを作る
+        layer.aff=affFromPage(layer.pgAff,layer.pageWpt,layer.pageHpt,c.width,c.height);
+        rebuildDrawer(); render(); hideLoad();
         mapsDirty();   // v0.60: ここで予約しないと GeoPDF は永久に保存されない
         cb&&cb(); });
     }).catch(function(err){ hideLoad(); toast('描画エラー: '+err.message,true); });
@@ -3459,9 +3532,12 @@
       af={a:sx,b:0,c:W[0][0]-sx*P[0][0],d:0,e:sy,f:W[0][1]-sy*P[0][1]}; }
     function ap(px,py){ return [af.a*px+af.b*py+af.c, af.d*px+af.e*py+af.f]; }
     var cs=[ap(0,0),ap(wpt,0),ap(0,hpt),ap(wpt,hpt)], xs=cs.map(function(p){return p[0];}), ys=cs.map(function(p){return p[1];});
-    var rot=(Math.abs(af.b)+Math.abs(af.d))>(Math.abs(af.a)+Math.abs(af.e))*0.02;
-    if(rot) setTimeout(function(){ toast('GeoPDFに回転があるため外接範囲で近似配置しました',true); },400);
-    return {xmin:Math.min.apply(null,xs),xmax:Math.max.apply(null,xs),ymin:Math.min.apply(null,ys),ymax:Math.max.apply(null,ys),epsg:epsg,zone:z}; }
+    // v0.64: 傾き（上が真北でない地図）を捨てない。解いたアフィンをそのまま持ち帰り、
+    // 描画・高精細パッチ・GeoPDF 追記がこれを使う。xmin..ymax は 4 隅の外接矩形で、
+    // 全体表示・保存・レイヤー一覧など「だいたいの範囲」が要る所だけが使う。
+    return {xmin:Math.min.apply(null,xs),xmax:Math.max.apply(null,xs),
+            ymin:Math.min.apply(null,ys),ymax:Math.max.apply(null,ys),epsg:epsg,zone:z,
+            pgAff:{a:af.a,b:af.b,c:af.c,d:af.d,e:af.e,f:af.f}}; }
   function georefFromScan(s,wpt,hpt){ // 全文走査フォールバック(最大BBoxのViewport)
     var best=null, from=0;
     while(true){ var vi=s.indexOf('/Viewport',from); if(vi<0)break; from=vi+8;
@@ -6055,7 +6131,14 @@
             w:W,h:H, wPt:W/scale, hPt:H/scale};
   }
   function pageOverlayOps(geo,wpt,hpt,labels,mPerPt){ // ベクター描画ops + ラベル配置 + 隠し注釈
-    function w2p(X,Y){ return [(X-geo.xmin)*wpt/(geo.xmax-geo.xmin), (Y-geo.ymin)*hpt/(geo.ymax-geo.ymin)]; }
+    // v0.64: 上が真北でない地図に対応。ページ座標 -> world のアフィンの逆で戻す。
+    // 軸並行の地図では従来と同じ式になる。
+    var pgA=geo.pgAff||pageAffFromBox(geo,wpt,hpt), inv=affInv(pgA);
+    // world で水平な文字は、傾いた紙面では -θ 傾けて置く（現地で水平に読める）
+    var trot=pgA?-Math.atan2(pgA.d,pgA.a):0;
+    function w2p(X,Y){
+      if(!inv) return [(X-geo.xmin)*wpt/(geo.xmax-geo.xmin), (Y-geo.ymin)*hpt/(geo.ymax-geo.ymin)];
+      return affApply(inv,X,Y); }
     var lwPt=1.13, ops='Q\nq\n1 j 1 J\n';
     // ハッチ: ソリッド塗り（v0.25）。薄色近似の塗りでは下の等高線を覆ってしまうので、
     // ExtGState /ca による本物の透明度を使う（/GSh は buildOverlayPdf 側で各ページの
@@ -6073,6 +6156,7 @@
     // v0.44: rot（ラジアン）があれば、座敷（白座布団）と文字をまとめて cm 行列で回す。
     // PDF のユーザ空間は y 上向きなので、world の角度をそのまま使える。
     function label(key,leftW,topW,rot){ var L=labels[key]; if(!L)return; var tl=w2p(leftW,topW);
+      rot=(rot||0)+trot;   // v0.64: 紙面の傾きぶんを足す（world 水平＝現地で水平に読める）
       var pre='', post='';
       if(rot){ var rca=Math.cos(rot), rsa=Math.sin(rot);
         pre='q\n'+fp(rca,5)+' '+fp(rsa,5)+' '+fp(-rsa,5)+' '+fp(rca,5)+' '
@@ -6151,7 +6235,9 @@
       var g=pg.geo; if(db[2]<g.xmin||db[0]>g.xmax||db[3]<g.ymin||db[1]>g.ymax)return;
       targets.push({i:i,pn:pn,geo:g,wpt:pg.wpt,hpt:pg.hpt}); });
     if(!targets.length) return {err:'スケッチがどのページの図郭にも掛かっていません'};
-    var mPerPt0=(targets[0].geo.xmax-targets[0].geo.xmin)/targets[0].wpt;
+    // v0.64: 傾いた地図では図郭の幅から割っても正しくない。アフィンの縮尺を使う。
+    var mPerPt0=affScale(targets[0].geo.pgAff||
+      pageAffFromBox(targets[0].geo,targets[0].wpt,targets[0].hpt));
     var labels=collectLabels(mPerPt0);
     // --- 新規オブジェクト割当 ---
     var nextN=meta.size, chunks=[], offs={}, pos=doc.bytes.length;
@@ -6185,7 +6271,7 @@
     var updates=[]; // {n, body}
     targets.forEach(function(tg){
       var body=pdfBody2(str,idx,tg.pn); if(!body)return;
-      var mPerPt=(tg.geo.xmax-tg.geo.xmin)/tg.wpt;
+      var mPerPt=affScale(tg.geo.pgAff||pageAffFromBox(tg.geo,tg.wpt,tg.hpt));   // v0.64
       var ov=pageOverlayOps(tg.geo,tg.wpt,tg.hpt,labels,mPerPt);
       var drawN=nextN++; streamObj(drawN,'',latin1(ov.ops));
       var annots=annObjs(ov.w2p,mPerPt), annRefs=[];
@@ -6467,7 +6553,7 @@
         var vp=page.getViewport({scale:g.sc, offsetX:-g.px0*g.sc, offsetY:-(r.pageHpt-g.py1)*g.sc});
         var c=document.createElement('canvas'); c.width=g.cw; c.height=g.ch;
         return page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
-          r.__exp={canvas:c,xmin:g.ix0,ymin:g.iy0,xmax:g.ix1,ymax:g.iy1}; });
+          r.__exp={canvas:c,aff:g.aff}; });
       }).catch(function(){});
     });
     Promise.all(jobs).then(function(){
@@ -6656,7 +6742,8 @@
     if(!opts.noRasters){ rs=S.rasters.map(function(r){ var png=null;
       var sourced=!!(r.srcBytes||r.docId); // 元データを別途同梱するレイヤはPNGを持たせない
       try{ if(r.src&&!(opts.noPngSourced&&sourced)) png=r.src.toDataURL('image/png'); }catch(e){}
-      return {name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,epsg:r.epsg,zone:r.zone,vis:r.vis,op:r.op,png:png}; }); }
+      return {name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,
+        epsg:r.epsg,zone:r.zone,vis:r.vis,op:r.op,aff:(r.aff||undefined),png:png}; }); }
     var phs=S.photos;
     if(opts.stripPhotos) phs=S.photos.map(function(p){ var q={}; for(var k in p)if(k!=='img')q[k]=p[k]; return q; });
     return { format:'TerrainSketch.Project', version:4, savedAt:new Date().toISOString(), zone:S.Z, decl:S.decl, photoSeq:S.photoSeq, rotLock:!!S.rotLock, zoomLock:!!S.zoomLock, anchorIn:S.anchorIn!==false, smooth:SMOOTH_PASSES(), snap:S.snap!==false,
@@ -6921,7 +7008,8 @@
       if(!r.rendered||!r.src){ pend++; next(); return; }   // まだ描けていない
       rasterBlob(r,function(b){
         if(b) out.push({name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,
-          epsg:r.epsg,zone:r.zone,vis:(r.vis!==false),op:(r.op==null?1:r.op),blob:b});
+          epsg:r.epsg,zone:r.zone,vis:(r.vis!==false),op:(r.op==null?1:r.op),
+          aff:(r.aff||null),blob:b});   // v0.64: 傾きも一緒に残す
         next(); }); })(); }
   var mapsT=0;
   function mapsDirty(){ clearTimeout(mapsT); mapsT=setTimeout(saveMaps,1500); }
@@ -6964,7 +7052,7 @@
       for(k=0;k<items.length;k++){ m=items[k];
         r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,
           xmax:m.xmax,ymax:m.ymax,epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),
-          op:m.op,rendered:true,src:null,restored:true};
+          op:m.op,aff:(m.aff||null),rendered:true,src:null,restored:true};
         addRaster(r); slots.push(r); }
       var left=items.length, n=0;
       items.forEach(function(mm,i){
@@ -7042,7 +7130,8 @@
         var slots=[], k, m, r;
         for(k=0;k<metas.length;k++){ m=metas[k];
           r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,xmax:m.xmax,ymax:m.ymax,
-            epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),op:(m.op==null?1:m.op),rendered:true,src:null};
+            epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),op:(m.op==null?1:m.op),
+            aff:(m.aff||null),rendered:true,src:null};
           addRaster(r); slots.push(r); }
         var left=metas.length, n=0;
         metas.forEach(function(mm,i){
