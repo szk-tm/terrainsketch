@@ -2363,7 +2363,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.70';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.71';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5940,13 +5940,19 @@
       // v0.44: FreeText の /Rect は軸平行しか表せない。回転している文字は
       // 回転後の外接矩形を /Rect にし、角度は私有キー /TSRot（度）で渡す。
       // 未知キーを無視する読み手（プラグイン §5）では水平として読めるだけで壊れない。
+      // v0.71: 図郭向き書き出しでは、ワールド角ロック文字（t.rot!=0）を「ページ内相対角」で出す。
+      //   Reader v0.41.13 は φ(ワールド文字角)=θ(ページ回転)+/TSRot(ページ内相対角) の加法モデル。
+      //   ページ内相対角 pAng = ワールド角 rot - θ = rot + frameRad（θ=atan2(d,a)=-frameRad）。
+      //   ビルボード文字（rot=0）は pAng=0 → /TSRot 無し → Reader が θ で図郭正立。
+      //   北上/追記経路は frameRad を渡さない → pAng=rot＝従来どおり（後方互換）。
+      var pAng = rot ? (rot + (frameRad||0)) : 0;
       var R=[tl[0],tl[1]-hpt,tl[0]+wpt,tl[1]], extra='';
-      if(rot){ var rc=Math.cos(rot), rs=Math.sin(rot), k;
+      if(pAng){ var rc=Math.cos(pAng), rs=Math.sin(pAng), k;
         var C=[[0,0],[wpt,0],[wpt,-hpt],[0,-hpt]], xs=[], ys=[];
         for(k=0;k<4;k++){ xs.push(tl[0]+C[k][0]*rc-C[k][1]*rs); ys.push(tl[1]+C[k][0]*rs+C[k][1]*rc); }
         R=[Math.min.apply(null,xs),Math.min.apply(null,ys),
            Math.max.apply(null,xs),Math.max.apply(null,ys)];
-        extra='/TSRot '+fp(rot*180/Math.PI,3); }
+        extra='/TSRot '+fp(pAng*180/Math.PI,3); }
       A.push(base('FreeText',col,R)+da+extra+(x2||'')+'/Q 0/Contents '+pdfStr(txt)+'>>'); }
     var col;
     // v0.46: 寸法の手がかり。プラグインが「どの線とどの文字が同じ寸法か」「測った 2 点はどこか」を
