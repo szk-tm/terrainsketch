@@ -2363,7 +2363,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.69';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.70';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5897,8 +5897,14 @@
     for(var i=0;i<ds.length;i++){ var wmm=W*1000/ds[i], hmm=H*1000/ds[i];
       if((wmm<=410&&hmm<=287)||(wmm<=287&&hmm<=410)) return ds[i]; }
     return ds[ds.length-1]; }
-  function annObjs(w2p,mPerPt){
+  function annObjs(w2p,mPerPt,frameRad){
     var A=[]; var minWpt=1.13; // 0.4mm
+    // v0.70: 図郭向き書き出しで、ビルボード（画面正立）の幾何を図郭に正立させる回転。
+    //   +Y→+X 規約。frameRad=atan2(b,e)（=図郭角）なら、ワールド北上テンプレートが
+    //   ページ上向き（図郭上）に一致する（点記号で数値検証済み）。未指定なら恒等。
+    function rW(px,py,ox,oy){ if(!frameRad) return [px,py];
+      var C=Math.cos(frameRad), Sr=Math.sin(frameRad), dx=px-ox, dy=py-oy;
+      return [ox+dx*C+dy*Sr, oy-dx*Sr+dy*C]; }
     function rectOf(pp,pad){ var b=[1e30,1e30,-1e30,-1e30]; pp.forEach(function(p){b[0]=Math.min(b[0],p[0]);b[1]=Math.min(b[1],p[1]);b[2]=Math.max(b[2],p[0]);b[3]=Math.max(b[3],p[1]);});
       pad=(pad==null?2:pad); return [b[0]-pad,b[1]-pad,b[2]+pad,b[3]+pad]; }
     function flat(ptsW){ return ptsW.map(function(p){ return w2p(p[0],p[1]); }); }
@@ -5991,11 +5997,14 @@
     // v0.49: 形は SYMDEF から。円は Circle 注釈、2 点の開いた折れ線は Ink、
     // それ以外は PolyLine/Polygon 注釈。
     S.symbols.forEach(function(sy){ col=hexRgb01((LAYERS[sy.layer]||LAYERS[0]).color); var r=sy.size/2,x=sy.x,y=sy.y;
+      // v0.70: 図郭向き書き出しでは点記号を図郭に正立させる（幾何なので Reader が忠実に読む）。
       symPrims(sy).forEach(function(pr){
-        if(pr.k==='c'){ circ(pr.x,pr.y,pr.r,col); }
-        else if(pr.pts.length===2&&!pr.close){ ink([pr.pts],col); }
-        else { pline(pr.pts,col,pr.close); } });
-      if(sy.label) ftext(sy.label, x+r*1.25, y+sy.size*0.27, sy.size*0.45, col); });
+        if(pr.k==='c'){ var cc=rW(pr.x,pr.y,x,y); circ(cc[0],cc[1],pr.r,col); }
+        else { var rp=pr.pts.map(function(q){return rW(q[0],q[1],x,y);});
+          if(rp.length===2&&!pr.close){ ink([rp],col); }
+          else { pline(rp,col,pr.close); } } });
+      // 記号ラベルは文字なので Reader が水平に置く（回転は Reader 対応待ち）。位置だけ図郭に合わせる。
+      if(sy.label){ var la=rW(x+r*1.25, y+sy.size*0.27, x, y); ftext(sy.label, la[0], la[1], sy.size*0.45, col); } });
     S.photos.forEach(function(ph){ col=hexRgb01(PHOTOL.color); var r=ph.size*0.22;
       circ(ph.x,ph.y,r,col);
       if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, dx=Math.sin(rad), dy=Math.cos(rad), tip=[ph.x+dx*ph.size,ph.y+dy*ph.size];
@@ -6074,7 +6083,7 @@
     corners.forEach(function(cp){ var w=affApply(pg,cp[0],cp[1]); cornersW.push(w); var g=ll(w[0],w[1]); gpts.push(g[0],g[1]); });
     var inv=affInv(pg);
     function w2p(X,Y){ return affApply(inv,X,Y); }
-    var annots=annObjs(w2p,mPerPt);
+    var annots=annObjs(w2p,mPerPt,Math.atan2(pg.b,pg.e));   // v0.70: 図郭角を渡す
     var denom=Math.round(mPerPt*72000/25.4);
     var title='RouteMap 1:'+denom;
     var pdf=buildGeoPdfBytes(jpeg,pxW,pxH,Wpt,Hpt,S.Z,gpts,annots,title);
