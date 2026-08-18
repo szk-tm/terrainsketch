@@ -2363,7 +2363,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.71';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.72';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2858,7 +2858,12 @@
       }).catch(function(){});
     });
   }
-  function drawLeader(ld,col){ var P=leaderPts(ld); var sp=P.map(function(q){return w2s(q[0],q[1]);});
+  function drawLeader(ld,col){ var P=leaderPts(ld);
+    // v0.72: 図郭向き書き出し（EXPORTING かつ回転あり）では棚を図郭水平へ回す（frameRad=-S.V.rot）。焼き込みと注釈で同じ回転。
+    var FR=(EXPORTING&&(S.V.rot||0))? -(S.V.rot||0) : 0;
+    if(FR){ var Cf=Math.cos(FR), Sf=Math.sin(FR), ex=P[1][0], ey=P[1][1], gx=P[2][0]-ex, gy=P[2][1]-ey;
+      P=[P[0],P[1],[ex+gx*Cf+gy*Sf, ey-gx*Sf+gy*Cf]]; }
+    var sp=P.map(function(q){return w2s(q[0],q[1]);});
     ctx.strokeStyle=col; ctx.lineWidth=lw(2); ctx.lineJoin='round'; ctx.beginPath();
     for(var i=0;i<sp.length;i++){ i?ctx.lineTo(sp[i][0],sp[i][1]):ctx.moveTo(sp[i][0],sp[i][1]); } ctx.stroke();
     var a=sp[0], b=sp[1], ang=Math.atan2(b[1]-a[1],b[0]-a[0]), hl=Math.min(16,Math.max(8,ld.h*S.V.scale*0.7));
@@ -2869,9 +2874,11 @@
       var lines=(ld.t||'').split('\n');
       // 旗揚げの文字は「棚」に載っているので、地図を回したら棚と一緒に傾ける。
       // ただし上下逆さまでは読めないので、±90°を超えたら棚の反対端を基点に180°反転する。
-      var lg=leaderShelf(ld), rot=normAng(S.V.rot||0), flip=(rot>Math.PI/2||rot<-Math.PI/2);
-      var base=flip?lg.right:lg.left, bp=w2s(base[0],base[1]);
-      ctx.save(); ctx.translate(bp[0],bp[1]); ctx.rotate(flip?normAng(rot+Math.PI):rot);
+      var rot, bp;
+      if(FR){ var e2=sp[1], f2=sp[2]; bp=(e2[0]<=f2[0])?e2:f2; rot=0; }   // v0.72: 文字は画面水平・棚の画面左端に置く
+      else { var lg=leaderShelf(ld); rot=normAng(S.V.rot||0); var flip=(rot>Math.PI/2||rot<-Math.PI/2);
+        var base=flip?lg.right:lg.left; bp=w2s(base[0],base[1]); if(flip)rot=normAng(rot+Math.PI); }
+      ctx.save(); ctx.translate(bp[0],bp[1]); ctx.rotate(rot);
       for(var i=0;i<lines.length;i++){ var yy=-fpx*0.25-(lines.length-1-i)*fpx*1.2;
         ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillText(lines[i],fpx*0.2+1,yy+1); ctx.fillStyle=col; ctx.fillText(lines[i],fpx*0.2,yy); }
       ctx.restore(); } }
@@ -5990,7 +5997,10 @@
       // 文字が棚の端から始まるので、これで左右どちらでも「最終点 = 文字の位置」になる。
       // 焼き込み・DXF・画面は変更していない（棚線は今までどおり描かれる）。
       var lx=Math.min(P[1][0],P[2][0]);
-      ink([[P[0],[lx,P[1][1]]],[wA,P[0],wB]],col,null,
+      if(frameRad){ var se=rW(P[2][0],P[2][1],P[1][0],P[1][1]);   // v0.72: 棚端を折れ点まわりに図郭水平へ回す
+        ink([[P[0],[P[1][0],P[1][1]],se],[wA,P[0],wB]],col,null,
+          '/Subj(leader)/TSLead('+ld.id+')/TSLeadRot 0'); }        // 明示3点+/TSLeadRot（世界棚方向=θ+0）
+      else ink([[P[0],[lx,P[1][1]]],[wA,P[0],wB]],col,null,
         '/Subj(leader)/TSLead('+ld.id+')');   // v0.46 / v0.48
       var lines=(ld.t||'').split('\n'), sx=lx+ld.h*0.2;
       // 矩形上端は「CAD の行送り」で決める（v0.35）。行送りは CAD_LINE_PITCH(=1.2)。
@@ -5998,7 +6008,10 @@
       // 実装は 1.2h で、プラグイン側の実測（2 行の旗揚げで厳密一致）とも合っている。
       // 誤った注記が仕様書に写っていたので、あわせて直した。
       var top=P[1][1]+ld.h*0.25+(lines.length-1)*ld.h*CAD_LINE_PITCH+ld.h*0.8;
-      ftext(ld.t,sx,top,ld.h,col,Math.max(ld.len||0,needW),0,
+      if(frameRad){ var ta=rW(sx,top,P[1][0],P[1][1]);   // v0.72: 文字位置も棚に合わせて回す（landing 終端＝文字位置）
+        ftext(ld.t,ta[0],ta[1],ld.h,col,Math.max(ld.len||0,needW),0,
+          '/Subj(leader)/TSLead('+ld.id+')'); }
+      else ftext(ld.t,sx,top,ld.h,col,Math.max(ld.len||0,needW),0,
         '/Subj(leader)/TSLead('+ld.id+')'); });   // v0.46
     // v0.49: 形は SYMDEF から。円は Circle 注釈、2 点の開いた折れ線は Ink、
     // それ以外は PolyLine/Polygon 注釈。
