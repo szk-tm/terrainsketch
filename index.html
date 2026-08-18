@@ -2363,7 +2363,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.68';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.69';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2774,17 +2774,18 @@
   // lwMul: 線幅の追加倍率（v0.28）。3D テクスチャは高解像度で焼くため
   //   EXPORT_LW が最大 4 倍程度まで効き、2D の見た目より太くなる。3D 側から
   //   1 未満を渡して細くできるようにした。未指定なら従来どおり 1。
-  function exportComposite(ext,pxW,pxH,onlyRaster,selMap,sketch,lwMul){
+  function exportComposite(ext,pxW,pxH,onlyRaster,selMap,sketch,lwMul,rotOv,viewOv){
     var oc=document.createElement('canvas'); oc.width=pxW; oc.height=pxH;
     // 出力は常に北を上にする。GeoPDF追記の world→page 対応は軸並行前提なので、
     // ここで回転を 0 にしないと座標がずれる（画面の見た目とは独立）。
     var sv={ctx:ctx,cssW:cssW,cssH:cssH,DPR:DPR,cx:S.V.cx,cy:S.V.cy,sc:S.V.scale,rot:S.V.rot};
-    S.V.rot=0;
+    S.V.rot=(rotOv!=null)?rotOv:0;   // v0.69: 図郭向き出力では frameRot を与える（既定は従来どおり北上）
     ctx=oc.getContext('2d'); cssW=pxW; cssH=pxH; DPR=1;
     EXPORTING=true; ONLY_RASTER=onlyRaster||null; EXPORT_SEL=selMap||null; EXPORT_SKETCH=sketch;
     EXPORT_LW=Math.max(1,pxW/2000)*(lwMul||1); NOTXT=(sketch==='geom'); NOPHOTODIR=(sketch==='geom');
-    S.V.cx=(ext.xmin+ext.xmax)/2; S.V.cy=(ext.ymin+ext.ymax)/2;
-    S.V.scale=Math.min(pxW/(ext.xmax-ext.xmin), pxH/(ext.ymax-ext.ymin));
+    if(viewOv){ S.V.cx=viewOv.cx; S.V.cy=viewOv.cy; S.V.scale=viewOv.scale; }
+    else { S.V.cx=(ext.xmin+ext.xmax)/2; S.V.cy=(ext.ymin+ext.ymax)/2;
+      S.V.scale=Math.min(pxW/(ext.xmax-ext.xmin), pxH/(ext.ymax-ext.ymin)); }
     try{ render(); }finally{
       EXPORTING=false; ONLY_RASTER=null; EXPORT_SEL=null; EXPORT_SKETCH=undefined; EXPORT_LW=1;
       NOTXT=false; NOPHOTODIR=false;
@@ -6047,8 +6048,42 @@
     var sx=(ext.xmax-ext.xmin)/Wpt, sy=(ext.ymax-ext.ymin)/Hpt, tx=ext.xmin, ty=ext.ymin;
     var R=function(v){return JSON.stringify(v);};
     return '{\n  "format": "GhContourPdf.GeoSidecar",\n  "version": 1,\n  "pdf": '+R(pdfName)+',\n  "crs": {\n    "zone": '+S.Z+',\n    "datum": "JGD2011",\n    "epsg": '+(6668+S.Z)+',\n    "citation": '+R('JGD2011 / Japan Plane Rectangular CS '+romanZone(S.Z))+'\n  },\n  "conventions": {\n    "pageSpace": "PDF user space: origin bottom-left, unit pt (1/72 inch), Y up",\n    "worldSpace": "JPR projected meters: X = east (Rhino X), Y = north (Rhino Y)",\n    "pageToWorld": "worldX = a*xPt + b*yPt + c; worldY = d*xPt + e*yPt + f; coeffs = [a,b,c,d,e,f]"\n  },\n  "pages": [\n    {\n      "page": 1,\n      "pageType": "RouteMap",\n      "title": '+R(title)+',\n      "scale": '+denom+',\n      "bboxPt": [0, 0, '+Wpt+', '+Hpt+'],\n      "worldRect": ['+ext.xmin+', '+ext.ymin+', '+ext.xmax+', '+ext.ymax+'],\n      "pageToWorld": ['+sx+', 0, '+tx+', 0, '+sy+', '+ty+'],\n      "worldToPage": ['+(1/sx)+', 0, '+(-tx/sx)+', 0, '+(1/sy)+', '+(-ty/sy)+']\n    }\n  ]\n}\n'; }
+  // v0.69: 図郭（元ページの向き）で A3 のまま書き出すための道具立て。
+  //   元 GeoPDF が開かれていれば、そのページアフィン・寸法をそのまま再現する。
+  function primaryPdfRaster(){
+    var vis=S.rasters.filter(function(r){return r.vis&&r.kind==='pdf'&&r.pgAff&&r.pageWpt&&r.pageHpt;});
+    if(!vis.length) vis=S.rasters.filter(function(r){return r.kind==='pdf'&&r.pgAff&&r.pageWpt&&r.pageHpt;});
+    return vis.length?vis[0]:null; }
+  function buildSidecarAff(pdfName,denom,pg,Wpt,Hpt,title,cornersW){
+    var R=function(v){return JSON.stringify(v);};
+    var p2w=[pg.a,pg.b,pg.c,pg.d,pg.e,pg.f], inv=affInv(pg);
+    var w2pv=[inv.a,inv.b,inv.c,inv.d,inv.e,inv.f], wc=[];
+    (cornersW||[]).forEach(function(w){ wc.push(w[0],w[1]); });
+    return '{\n  "format": "GhContourPdf.GeoSidecar",\n  "version": 2,\n  "pdf": '+R(pdfName)+',\n  "crs": {\n    "zone": '+S.Z+',\n    "datum": "JGD2011",\n    "epsg": '+(6668+S.Z)+',\n    "citation": '+R('JGD2011 / Japan Plane Rectangular CS '+romanZone(S.Z))+'\n  },\n  "conventions": {\n    "pageSpace": "PDF user space: origin bottom-left, unit pt (1/72 inch), Y up",\n    "worldSpace": "JPR projected meters: X = east (Rhino X), Y = north (Rhino Y)",\n    "cornerOrder": "GPTS/LPTS corners are UL, LL, LR, UR",\n    "pageToWorld": "worldX = a*xPt + b*yPt + c; worldY = d*xPt + e*yPt + f; coeffs = [a,b,c,d,e,f]"\n  },\n  "pages": [\n    {\n      "page": 1,\n      "pageType": "RouteMap",\n      "title": '+R(title)+',\n      "scale": '+denom+',\n      "bboxPt": [0, 0, '+Wpt+', '+Hpt+'],\n      "cornerOrder": "UL,LL,LR,UR",\n      "pageToWorld": ['+p2w.join(', ')+'],\n      "worldToPage": ['+w2pv.join(', ')+'],\n      "worldCorners": ['+wc.join(', ')+']\n    }\n  ]\n}\n'; }
+  function makeGeoPdfFramed(r0){
+    var pg=r0.pgAff, Wpt=r0.pageWpt, Hpt=r0.pageHpt, mPerPt=affScale(pg);
+    var dpi=300, pxW=Math.round(Wpt/72*dpi), pxH=Math.round(Hpt/72*dpi);
+    var MAXPX=15500000, area=pxW*pxH;
+    if(area>MAXPX){ var k=Math.sqrt(MAXPX/area); pxW=Math.round(pxW*k); pxH=Math.round(pxH*k); }
+    var cen=affApply(pg,Wpt/2,Hpt/2), rot=frameRotOf(pg), scale=pxW/(Wpt*mPerPt);
+    var oc=exportComposite(null,pxW,pxH,null,null,undefined,1,rot,{cx:cen[0],cy:cen[1],scale:scale});
+    var jpeg=dataUrlToU8(oc.toDataURL('image/jpeg',0.92));
+    function ll(X,Y){ var r=proj4('JPC:'+S.Z,'EPSG:4326',[X,Y]); return [r[1],r[0]]; }
+    var corners=[[0,Hpt],[0,0],[Wpt,0],[Wpt,Hpt]];   // UL,LL,LR,UR（pt）
+    var gpts=[], cornersW=[];
+    corners.forEach(function(cp){ var w=affApply(pg,cp[0],cp[1]); cornersW.push(w); var g=ll(w[0],w[1]); gpts.push(g[0],g[1]); });
+    var inv=affInv(pg);
+    function w2p(X,Y){ return affApply(inv,X,Y); }
+    var annots=annObjs(w2p,mPerPt);
+    var denom=Math.round(mPerPt*72000/25.4);
+    var title='RouteMap 1:'+denom;
+    var pdf=buildGeoPdfBytes(jpeg,pxW,pxH,Wpt,Hpt,S.Z,gpts,annots,title);
+    return {pdf:pdf, sidecar:buildSidecarAff('routemap.pdf',denom,pg,Wpt,Hpt,title,cornersW), denom:denom, nAnn:annots.length}; }
   function makeGeoPdfPackage(){
     var ext=computeExtents(); if(!ext) return null;
+    // v0.69: 元 GeoPDF があれば、そのページ（図郭）を上にして A3 のまま出す。無ければ従来の北上外接矩形。
+    var r0=primaryPdfRaster();
+    if(r0) return makeGeoPdfFramed(r0);
     var denom=pickScaleDenom(ext);
     var Wm=ext.xmax-ext.xmin, Hm=ext.ymax-ext.ymin;
     var wmm=Wm*1000/denom, hmm=Hm*1000/denom;
