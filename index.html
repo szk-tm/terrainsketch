@@ -162,7 +162,7 @@
        ここには含めない。ツールバーの max-height もこの変数を見る（1 か所で決める）。
        v0.59: 利用者の指定で 30px -> 15px。内側は 15 - 1（上辺の罫線）= 14px なので、
        #hud に line-height:1 を入れて 12px の行box を確実に収める。 */
-    --statusH:15px;
+    --statusH:20px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--ink);
@@ -288,14 +288,14 @@
      左端にスケール（#hudL）、右端に座標・1px あたりの長さ・系・GPS（#hudR）。
      この 2 つは flex の兄弟なので **重なりようがない**。v0.55〜v0.57 の
      「札の矩形を測ってスケールを逃がす」処理はここで役目を終えた（JS 側も削除）。
-     高さは 15px の帯 + セーフエリアぶん。帯は最下部（bottom:0）まで伸ばし、
-     文字は上側 15px に置く（padding-bottom でセーフエリアを地色で埋める）。
-     v0.65 A案で空いた下端の隙間をなくす（v0.66）。 */
+     高さは --statusH（20px）。帯は最下部（bottom:0）に置き、align-items:center で
+     文字を縦中央に揃える。セーフエリアは高さに含めず帯を薄く保つ。
+     実機の指摘で 15px→20px・上揃え→中央寄せ（v0.67）。 */
   #hud{position:fixed;left:0;right:0;bottom:0;z-index:20;
     display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap;
     width:auto;max-width:none;overflow:hidden;
-    height:calc(var(--statusH) + var(--safe-b));
-    padding:0 calc(12px + var(--safe-r)) var(--safe-b) calc(12px + var(--safe-l));
+    height:var(--statusH);
+    padding:0 calc(12px + var(--safe-r)) 0 calc(12px + var(--safe-l));
     border:0;border-top:1px solid var(--line);border-radius:0;
     background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
@@ -788,6 +788,7 @@
   <div class="frow" id="mPhotoRow"><label>写真</label><button id="btnPhoto">📷 写真を追加</button><button id="btnPhotoDel" class="ghost hidden">削除</button></div>
   <img id="photoPrev" alt="">
   <div id="mDirWrap" style="display:none;">
+    <div class="frow" id="mNoRow"><label>番号</label><span style="color:var(--muted)">P-</span><input type="number" id="photoNoIn" step="1" min="0" style="width:88px"><span class="muted2">この番号から連番になります</span></div>
     <div class="frow"><label>撮影方位</label>
       <input type="number" id="dirIn" step="1" min="0" max="359" placeholder="なし"> <span style="color:var(--muted);font-size:12px">°（北0・時計回り）</span>
       <div class="frowD" style="margin-top:6px"><label>俯仰角</label>
@@ -864,10 +865,10 @@
 <input type="file" id="file" multiple class="hidden"
   accept=".pdf,.json,.geojson,.tif,.tiff,.png,.jpg,.jpeg,.tfw,.jgw,.pgw,.wld,.jpgw,.pngw,.tifw,.prj,.wkt">
 <div id="camSheet"><!-- v0.54: class="sheet" は定義が無かったので外した -->
-  <div class="box" style="max-width:560px;padding:10px">
+  <div class="box" style="max-width:728px;padding:10px">
     <div style="font-weight:700;margin-bottom:6px">📷 撮影</div>
     <video id="camVid" playsinline autoplay muted
-      style="width:100%;max-height:60vh;background:#000;border-radius:10px;display:block"></video>
+      style="width:100%;max-height:78vh;background:#000;border-radius:10px;display:block"></video>
     <div id="camHint" class="muted2" style="margin:6px 2px;min-height:18px">カメラを起動中…</div>
     <div class="frow" style="gap:8px">
       <button id="camShoot" class="prim" style="flex:1">● 撮影</button>
@@ -2362,7 +2363,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.66';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.68';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2431,6 +2432,10 @@
   // 当てると 180° ずれるので注意（v064test ①で規約を固定してある）。
   function affNorthDeg(m){ if(!m)return 0;
     return Math.round(Math.atan2(m.b,m.e)*180/Math.PI*10)/10; }
+  // v0.68: 図郭（ページの上）を画面の上に立てる回転。w2s の回転規約（正=時計回り）に
+  //   合わせて S.V.rot=atan2(-b,e)（= -affNorthDeg のラジアン）。北上のページでは 0。
+  //   これで「PDF 本来の向き」で表示する。方位は aff から分かるので記録は不変。
+  function frameRotOf(m){ if(!m) return 0; return Math.atan2(-m.b, m.e); }
   // ラスタの画像画素(px 右, py 下, 原点は左上) -> world。
   // aff を持たない（軸並行・古い保存）ラスタは外接矩形から作る。
   function rasterAff(r){
@@ -3466,9 +3471,11 @@
               // 画面は北を上にするので、図面自体が傾いて見えるのが正しい。
               var tl=null;
               res.forEach(function(o){ if(!tl&&o.geo&&affTilted(o.geo.pgAff)) tl=o.geo.pgAff; });
-              if(tl) setTimeout(function(){
-                toast('この地図は上が真北ではありません（上方向が真北から '+affNorthDeg(tl)+
-                      '°）。画面は北を上にして、傾いたまま正しい位置に配置しました'); },700);
+              // v0.68: 北上を強制せず、PDF 本来の向き（図郭を上）で表示する。方位は aff から
+              //   分かるので撮影方位などの記録は不変。🧭「北を上に戻す」で従来表示に切替可。
+              if(tl){ S.V.rot=frameRotOf(tl); setTimeout(function(){
+                toast('PDF 本来の向きで表示しています（上が真北から '+affNorthDeg(tl)+
+                      '°）。🧭「北を上に戻す」で切り替えられます'); },700); }
               afterAdd(n>1?('PDF '+added+'ページを座標化'+(skipped?('・座標なし'+skipped+'ページは除外'):'')):'GeoPDF', fz, fe); fin(); });
           });
         }).catch(function(err){ hideLoad(); toast('PDFを開けません: '+err.message,true); fin(); });
@@ -4141,7 +4148,7 @@
     el('modalTitle').textContent=(mode==='photo'?('写真ポイント '+pno(S.photos[idx])):titles[mode]+((idx!=null)?'を編集':'を追加'));
     refreshPhotoPrev(); syncSizeUI(); syncHPre();
     el('mDelete').classList.toggle('hidden',idx==null);
-    buildMSwatch(); refreshPhotoPrev(); if(mode==='photo'){ el('photoPrev').src=M.photo||''; el('photoPrev').style.display=M.photo?'block':'none'; drawDial(); }
+    buildMSwatch(); refreshPhotoPrev(); if(mode==='photo'){ el('photoPrev').src=M.photo||''; el('photoPrev').style.display=M.photo?'block':'none'; el('photoNoIn').value=(S.photos[idx]&&S.photos[idx].no!=null)?S.photos[idx].no:''; drawDial(); }
     modalBack.style.display='flex';
     M.wpt=null;
     placeModal(isTL?anchorPt(mode,idx):null);   // v0.39: 記入欄をタップ位置の横へ
@@ -4245,7 +4252,9 @@
       var pv=el('pitchIn').value.trim(), np=(pv==='')?null:Math.max(-90,Math.min(90,parseFloat(pv)||0));
       // 手で変えたら取得元を manual にする（以後 自動値で上書きしない）
       if(nd!==ph.dir||np!==ph.pitch) ph.dirSrc='manual';
-      ph.dir=nd; ph.pitch=np; ph.note=el('noteIn').value; } }
+      ph.dir=nd; ph.pitch=np; ph.note=el('noteIn').value;
+      var nv=el('photoNoIn').value.trim();
+      if(nv!==''){ var nn=Math.max(0,parseInt(nv,10)||0); ph.no=nn; if(S.photoSeq<=nn) S.photoSeq=nn+1; } } }
     closeModal(); render(); };
   // 方位ダイヤル
   var dial=el('dial'), dctx=dial.getContext('2d');
@@ -7018,9 +7027,18 @@
     S.rasters.forEach(function(r){ if(r.srcBytes) put(r.srcId,'tif',r.srcName||r.name,r.name,r.srcMtime); });
     return out.length?out:undefined; }
   // 保存してあった表示/非表示・不透明度を、名前を頼りに戻す（読み直しの後に当てる）
+  // v0.67: まず名前で合わせ、名前が食い違うものは保存順で拾い直す。再読込のラスタは
+  //   保存時と同じ順序で作られるので、名前の付き方が僅かに変わっても表示/不透明度を
+  //   取りこぼさない（DEM/GeoTIFF の表示 ON がプロジェクト復元で消えていた不具合の修正）。
   function applyRasterState(o){
-    (o.rasters||[]).forEach(function(m){ S.rasters.forEach(function(r){
-      if(r.name===m.name){ r.vis=(m.vis!==false); r.op=(m.op==null?1:m.op); } }); }); }
+    var metas=o.rasters||[], i, k, m, r, done=[];
+    for(i=0;i<metas.length;i++){ m=metas[i]; if(!m) continue;
+      for(k=0;k<S.rasters.length;k++){ if(done[k]) continue; r=S.rasters[k];
+        if(r.name===m.name){ r.vis=(m.vis!==false); r.op=(m.op==null?1:m.op); done[k]=1; m.__ok=1; break; } } }
+    for(i=0;i<metas.length;i++){ m=metas[i]; if(!m||m.__ok) continue;
+      for(k=0;k<S.rasters.length;k++){ if(done[k]) continue; r=S.rasters[k];
+        if(r.kind===m.kind){ r.vis=(m.vis!==false); r.op=(m.op==null?1:m.op); done[k]=1; break; } } }
+    for(i=0;i<metas.length;i++){ if(metas[i]) delete metas[i].__ok; } }
   // v0.54: 別のアプリへ行って戻ったときに読み込み直さなくて済むように、
   // 背景地図（描画結果）と表示位置も端末内に残す。
   //   ・スケッチ + 表示位置 → 'autosave'（軽いので 2.5 秒デバウンス）
