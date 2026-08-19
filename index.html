@@ -2363,7 +2363,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.72';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.73';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5977,8 +5977,9 @@
       if(s.closed) pline(s.pts,col,true,s.hatch?'hatch':null,db); else ink([s.pts],col,db,dimKeys(s)); });   // 閉じた線は Polygon 注釈・ハッチは /Subj(hatch)・点線は /BS の破線指定（v0.29.1）
     S.texts.forEach(function(t){ if(!t.t)return; col=hexRgb01((LAYERS[t.layer]||LAYERS[0]).color);
       var rt=t.rot||0, ux=Math.cos(rt), uy=Math.sin(rt), vx=-uy, vy=ux;   // v0.44
+      var tp=w2p(t.x,t.y);   // v0.73: タッチポイント（ページ座標・MediaBox 左下原点）→ Reader の Text In-View 基点
       ftext(t.t, t.x+ux*t.h*0.35+vx*t.h*0.8, t.y+uy*t.h*0.35+vy*t.h*0.8, t.h, col, null, rt,
-        dimKeys(t)+dimPts(t)); });   // v0.46
+        dimKeys(t)+dimPts(t)+'/TSPt ['+fp(tp[0],2)+' '+fp(tp[1],2)+']'); });   // v0.46 / v0.73
     S.leaders.forEach(function(ld){ col=hexRgb01((LAYERS[ld.layer]||LAYERS[0]).color);
       var P=leaderPts(ld);
       // 隠し注釈は CAD（プラグイン→Rhino）が読むので CAD 基準の幅で伸ばす（v0.32）。
