@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.79';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.80';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -6736,8 +6736,13 @@
     S.texts.forEach(function(t){ var L=LAYERS[t.layer]||LAYERS[0]; if(!L.vis||!t.t)return;
       poleLabel(t.x,t.y,t.t,L.color,Math.max(10,t.h*3),
         t.photo?{img:t.photo,cap:t.t.split('\n')[0]}:null); });
+    // v0.80: 3D の旗揚げ（矢印＝柱＋矢先からラベルまで）を 30% 短く（要望）。
+    //   poleH は実世界高さ(m)で zLocal（線形）に渡るため、0.7 倍すれば見た目の全長も
+    //   ほぼ比例して 30% 短くなる（ld.h=3〜50 で短縮率ちょうど 30.0% を実測確認）。
+    //   テキスト・記号ラベルの poleLabel 呼び出しは対象外（要望は旗揚げの矢印のみ）。
+    var LEADER_POLE_SCALE=0.7;
     S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0]; if(!L.vis)return;
-      poleLabel(ld.pts[0][0],ld.pts[0][1],(ld.t||''),L.color,Math.max(12,ld.h*3.5),null); });
+      poleLabel(ld.pts[0][0],ld.pts[0][1],(ld.t||''),L.color,Math.max(12,ld.h*3.5)*LEADER_POLE_SCALE,null); });
     S.symbols.forEach(function(sy){ var L=LAYERS[sy.layer]||LAYERS[0]; if(!L.vis||!sy.label)return;
       poleLabel(sy.x,sy.y,sy.label,L.color,Math.max(8,sy.size*1.2),null); });
     // 写真マーカー（v0.22・参考モデル）: 下向き小コーン + 針状コーン + リング一体のフィン板 + ラベル。
