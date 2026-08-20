@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.77';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.78';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2862,7 +2862,7 @@
       }).catch(function(){});
     });
   }
-  function drawLeader(ld,col){ var P=leaderPts(ld);
+  function drawLeader(ld,col){ var P=leaderPts(ld,-(S.V.rot||0));   // v0.78: 棚の向きも図郭水平基準で（FR と同角）
     // v0.72: 図郭向き書き出し（EXPORTING かつ回転あり）では棚を図郭水平へ回す（frameRad=-S.V.rot）。焼き込みと注釈で同じ回転。
     var FR=(S.V.rot||0)? -(S.V.rot||0) : 0;   // v0.74: アプリ表示も図郭水平（frame view）＝PDF と一致（北上 S.V.rot=0 は不変）
     if(FR){ var Cf=Math.cos(FR), Sf=Math.sin(FR), ex=P[1][0], ey=P[1][1], gx=P[2][0]-ex, gy=P[2][1]-ey;
@@ -2889,7 +2889,13 @@
   // 引出線の棚の左右端（world）。文字の基点計算とヒットテストで共用する。
   function leaderShelf(ld){ var P=leaderPts(ld), b=P[1], f=P[2];
     return (f[0]>=b[0])?{left:b,right:f,len:f[0]-b[0]}:{left:f,right:b,len:b[0]-f[0]}; }
-  function leaderPts(ld){ var tip=ld.pts[0], end=ld.pts[1], sgn=(end[0]>=tip[0])?1:-1, len=ld.len||(measureTextW(ld.t,ld.h)+ld.h*0.6);
+  function leaderPts(ld,frameRad){ var tip=ld.pts[0], end=ld.pts[1], len=ld.len||(measureTextW(ld.t,ld.h)+ld.h*0.6);
+    // v0.78: 棚の向き（左右）は「図郭水平軸への射影」で決める。従来はワールドX固定だったため、
+    //   ビューを回すと棚は画面水平に描かれる一方で向きだけワールド基準に残り、引出線側へ折れ返って鋭角に見えた。
+    //   frameRad は各経路が棚を図郭水平へ回す角（アプリ=-S.V.rot / 図郭GeoPDF=frameRad / DXF=-figRad）。
+    //   frameRad 省略（=0）なら射影=dx＝従来ワールドX＝北上・figRad=0 はバイト不変。
+    var fr=frameRad||0, dx=end[0]-tip[0], dy=end[1]-tip[1];
+    var sgn=((fr?(dx*Math.cos(fr)-dy*Math.sin(fr)):dx)>=0)?1:-1;
     return [tip,end,[end[0]+sgn*len,end[1]]]; }
   // v0.49: 形は SYMDEF から。単位座標をそのまま画面へ移すので、記号は
   // 地図を回しても正立したまま（従来と同じ挙動。地図記号は傾けない）。
@@ -4562,7 +4568,7 @@
   function hitText(px,py,tol){ for(var i=S.texts.length-1;i>=0;i--){ var t=S.texts[i],p=w2s(t.x,t.y); if(Math.hypot(px-p[0],py-p[1])<=Math.max(tol,16))return i;
     var fpx=Math.max(8,t.h*S.V.scale), w=(t.t||'').split('\n').reduce(function(m,s){return Math.max(m,s.length);},1)*fpx*0.62; if(px>=p[0]&&px<=p[0]+w+8&&py<=p[1]+4&&py>=p[1]-fpx*1.2)return i; } return -1; }
   function hitLeader(px,py){ var FR=(S.V.rot||0)? -(S.V.rot||0) : 0;   // v0.74: 描画（図郭水平ビルボード）と一致
-    for(var i=S.leaders.length-1;i>=0;i--){ var Pw=leaderPts(S.leaders[i]);
+    for(var i=S.leaders.length-1;i>=0;i--){ var Pw=leaderPts(S.leaders[i],FR);   // v0.78: 描画(drawLeader)と同じ棚向き
     if(FR){ var Cf=Math.cos(FR), Sf=Math.sin(FR), ex=Pw[1][0], ey=Pw[1][1], gx=Pw[2][0]-ex, gy=Pw[2][1]-ey;
       Pw=[Pw[0],Pw[1],[ex+gx*Cf+gy*Sf, ey-gx*Sf+gy*Cf]]; }   // 棚端を折れ点まわりに図郭水平へ
     var P=Pw.map(function(q){return w2s(q[0],q[1]);});
@@ -5667,7 +5673,7 @@
       dxf+=wMText(L.name,t.x+tvx*t.h,t.y+tvy*t.h,t.h,t.t,rt);
       if(!t.dimg) dxf+=wCircle(L.name,t.x,t.y,t.h*0.15);   // v0.76: タップ点（基点＝GeoPDF /TSPt と同じ点・ワールド座標）を円で。InView ピボット参照
     });
-    S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0], P=leaderPts(ld);
+    S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0], P=leaderPts(ld,-figRad);   // v0.78: 棚向きも図郭水平基準（figRad=0 は従来）
       // 棚線は CAD の文字送り幅に足りるまで伸ばす（v0.32）。
       // アプリ画面の棚より長くなるが、CAD 図面として文字が棚に収まる方を優先する。
       var needW6=cadTextW(ld.t,ld.h)+ld.h*0.4;
@@ -5998,7 +6004,7 @@
       ftext(t.t, t.x+ux*t.h*0.35+vx*t.h*0.8, t.y+uy*t.h*0.35+vy*t.h*0.8, t.h, col, null, rt,
         dimKeys(t)+dimPts(t)+'/TSPt ['+fp(tp[0],2)+' '+fp(tp[1],2)+']'); });   // v0.46 / v0.73
     S.leaders.forEach(function(ld){ col=hexRgb01((LAYERS[ld.layer]||LAYERS[0]).color);
-      var P=leaderPts(ld);
+      var P=leaderPts(ld,frameRad);   // v0.78: 棚向きも図郭水平基準（北上=frameRad 未指定で従来）
       // 隠し注釈は CAD（プラグイン→Rhino）が読むので CAD 基準の幅で伸ばす（v0.32）。
       // 焼き込み側とは長さが違うが、これは意図的: 注釈は Rhino のフォントで
       // 再描画され、焼き込みは我々が CID フォントで描くため必要幅が異なる。
@@ -6834,7 +6840,13 @@
       var sourced=!!(r.srcBytes||r.docId); // 元データを別途同梱するレイヤはPNGを持たせない
       try{ if(r.src&&!(opts.noPngSourced&&sourced)) png=r.src.toDataURL('image/png'); }catch(e){}
       return {name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,
-        epsg:r.epsg,zone:r.zone,vis:r.vis,op:r.op,aff:(r.aff||undefined),png:png}; }); }
+        epsg:r.epsg,zone:r.zone,vis:r.vis,op:r.op,aff:(r.aff||undefined),
+        // v0.78: 図郭向き書き出し（makeGeoPdfFramed）と DXF の図郭正立（figRad）は
+        //   pgAff/pageWpt/pageHpt を要件にしている。保存していなかったため、.json を
+        //   開き直すと primaryPdfRaster() が null に落ち、北上・外接矩形の縦長 PDF に
+        //   フォールバックしていた。足すだけなので古い .json は従来どおり動く。
+        pgAff:(r.pgAff||undefined),pageWpt:(r.pageWpt||undefined),pageHpt:(r.pageHpt||undefined),
+        png:png}; }); }
     var phs=S.photos;
     if(opts.stripPhotos) phs=S.photos.map(function(p){ var q={}; for(var k in p)if(k!=='img')q[k]=p[k]; return q; });
     return { format:'TerrainSketch.Project', version:4, savedAt:new Date().toISOString(), zone:S.Z, decl:S.decl, photoSeq:S.photoSeq, rotLock:!!S.rotLock, zoomLock:!!S.zoomLock, anchorIn:S.anchorIn!==false, smooth:SMOOTH_PASSES(), snap:S.snap!==false,
@@ -7160,7 +7172,11 @@
       rasterBlob(r,function(b){
         if(b) out.push({name:r.name,kind:r.kind,xmin:r.xmin,ymin:r.ymin,xmax:r.xmax,ymax:r.ymax,
           epsg:r.epsg,zone:r.zone,vis:(r.vis!==false),op:(r.op==null?1:r.op),
-          aff:(r.aff||null),blob:b});   // v0.64: 傾きも一緒に残す
+          aff:(r.aff||null),
+          // v0.78: 図郭向き書き出し・DXF 図郭正立の要件。控えに残さないと、
+          //   iOS がページを捨てて再読込になった時点で北上の縦長にフォールバックしていた。
+          pgAff:(r.pgAff||undefined),pageWpt:(r.pageWpt||undefined),pageHpt:(r.pageHpt||undefined),
+          blob:b});   // v0.64: 傾きも一緒に残す
         next(); }); })(); }
   var mapsT=0;
   function mapsDirty(){ clearTimeout(mapsT); mapsT=setTimeout(saveMaps,1500); }
@@ -7203,7 +7219,9 @@
       for(k=0;k<items.length;k++){ m=items[k];
         r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,
           xmax:m.xmax,ymax:m.ymax,epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),
-          op:m.op,aff:(m.aff||null),rendered:true,src:null,restored:true};
+          op:m.op,aff:(m.aff||null),rendered:true,src:null,restored:true,
+          // v0.78: 無い古い控えは undefined＝従来どおり
+          pgAff:(m.pgAff||undefined),pageWpt:(m.pageWpt||undefined),pageHpt:(m.pageHpt||undefined)};
         addRaster(r); slots.push(r); }
       var left=items.length, n=0;
       items.forEach(function(mm,i){
@@ -7281,7 +7299,9 @@
         for(k=0;k<metas.length;k++){ m=metas[k];
           r={kind:m.kind||'img',name:m.name||'地図',xmin:m.xmin,ymin:m.ymin,xmax:m.xmax,ymax:m.ymax,
             epsg:m.epsg,zone:m.zone,vis:(m.vis!==false),op:(m.op==null?1:m.op),
-            aff:(m.aff||null),rendered:true,src:null};
+            aff:(m.aff||null),rendered:true,src:null,
+            // v0.78: 図郭向き書き出し・DXF 図郭正立の要件（無い古い .json は undefined＝従来）
+            pgAff:(m.pgAff||undefined),pageWpt:(m.pageWpt||undefined),pageHpt:(m.pageHpt||undefined)};
           addRaster(r); slots.push(r); }
         var left=metas.length, n=0;
         metas.forEach(function(mm,i){
