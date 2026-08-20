@@ -753,6 +753,9 @@
       <button id="btnLoad">📁 読込（.json / バンドル.zip）</button>
       <button id="btnClearAll" class="danger">🗑 作図を全消去</button>
     </div>
+    <label class="dChk" style="display:flex;align-items:center;gap:8px;margin:8px 2px 0;font-size:14px;line-height:1.35;">
+      <input type="checkbox" id="dxfFrameH" checked style="width:22px;height:22px;accent-color:#f5a524;flex:0 0 22px;">
+      <span>DXF・一括の文字／記号／旗揚げを<b>図枠に水平</b>で書き出す<span class="hint2">（オフ＝X軸に水平＝北が上。図枠が傾いた案件のみ効きます）</span></span></label>
     <div class="muted2">ZIP=受け渡し一式（DXF・写真(P-###.jpg)・CSV・<b>写真台帳PDF</b>・GeoPDF+サイドカー・プロジェクト）。DXFの文字とフォルダ内ファイル名はP-###で一致します。<br><b>バンドル保存</b>=元のGeoPDF・DEM・写真・スケッチを1つのzipに同梱（<b>これを読込めば端末を替えても続きから踏査できます</b>）。スケッチは2.5秒ごとに端末内へ自動保存され、次回起動時に復元できます。GeoPDF=位置情報付きPDF — QGISやAvenza Mapsでそのまま重なり、GhContourPdfの「Geospatial PDF Reader」で作図をRhinoへ復元できます（等倍印刷で縮尺どおり）。</div>
     </div>
   </div>
@@ -2363,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.73';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.77';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2381,6 +2384,7 @@
     // 描き終わりは意図せず前の線に吸われることが多いので既定は切る。設定シートで入れられる。
     snapPx:14, snapStart:true, snapEnd:false, snapVertex:true, snapEndOnly:false,   // v0.41
     dimH:0, dimArrow:0.8, dimLwm:1, dimOff:1.2, dimLayer:4, dimPara:false,   // v0.44 寸法の設定
+    dxfFrameH:true,   // v0.77 DXF/一括の文字・記号・旗揚げの向き（true=図枠水平 / false=X軸水平＝北上）
     eraseR:24, erasePart:false, eraseCur:null,   // v0.46 消しゴム（半径[px]・部分削除・表示位置）
                                   // dimH=0 は自動（画面 16px 相当）／dimLayer=4 は NOTE_BLACK（黒）
     smooth:2,   // 平滑化の強さ 0=切 2=弱 4=強（v0.39.7）
@@ -2860,7 +2864,7 @@
   }
   function drawLeader(ld,col){ var P=leaderPts(ld);
     // v0.72: 図郭向き書き出し（EXPORTING かつ回転あり）では棚を図郭水平へ回す（frameRad=-S.V.rot）。焼き込みと注釈で同じ回転。
-    var FR=(EXPORTING&&(S.V.rot||0))? -(S.V.rot||0) : 0;
+    var FR=(S.V.rot||0)? -(S.V.rot||0) : 0;   // v0.74: アプリ表示も図郭水平（frame view）＝PDF と一致（北上 S.V.rot=0 は不変）
     if(FR){ var Cf=Math.cos(FR), Sf=Math.sin(FR), ex=P[1][0], ey=P[1][1], gx=P[2][0]-ex, gy=P[2][1]-ey;
       P=[P[0],P[1],[ex+gx*Cf+gy*Sf, ey-gx*Sf+gy*Cf]]; }
     var sp=P.map(function(q){return w2s(q[0],q[1]);});
@@ -4557,13 +4561,17 @@
   function hitStroke(px,py,tol){ for(var i=S.strokes.length-1;i>=0;i--){ var P=S.strokes[i].pts; for(var k=0;k<P.length-1;k++){ var a=w2s(P[k][0],P[k][1]),b=w2s(P[k+1][0],P[k+1][1]); if(distSeg(px,py,a[0],a[1],b[0],b[1])<=tol)return i; } } return -1; }
   function hitText(px,py,tol){ for(var i=S.texts.length-1;i>=0;i--){ var t=S.texts[i],p=w2s(t.x,t.y); if(Math.hypot(px-p[0],py-p[1])<=Math.max(tol,16))return i;
     var fpx=Math.max(8,t.h*S.V.scale), w=(t.t||'').split('\n').reduce(function(m,s){return Math.max(m,s.length);},1)*fpx*0.62; if(px>=p[0]&&px<=p[0]+w+8&&py<=p[1]+4&&py>=p[1]-fpx*1.2)return i; } return -1; }
-  function hitLeader(px,py){ for(var i=S.leaders.length-1;i>=0;i--){ var P=leaderPts(S.leaders[i]).map(function(q){return w2s(q[0],q[1]);});
+  function hitLeader(px,py){ var FR=(S.V.rot||0)? -(S.V.rot||0) : 0;   // v0.74: 描画（図郭水平ビルボード）と一致
+    for(var i=S.leaders.length-1;i>=0;i--){ var Pw=leaderPts(S.leaders[i]);
+    if(FR){ var Cf=Math.cos(FR), Sf=Math.sin(FR), ex=Pw[1][0], ey=Pw[1][1], gx=Pw[2][0]-ex, gy=Pw[2][1]-ey;
+      Pw=[Pw[0],Pw[1],[ex+gx*Cf+gy*Sf, ey-gx*Sf+gy*Cf]]; }   // 棚端を折れ点まわりに図郭水平へ
+    var P=Pw.map(function(q){return w2s(q[0],q[1]);});
     for(var k=0;k<P.length-1;k++) if(distSeg(px,py,P[k][0],P[k][1],P[k+1][0],P[k+1][1])<=10)return i;
-    var ld=S.leaders[i], fpx=Math.max(8,ld.h*S.V.scale), lg=leaderShelf(ld), lp=w2s(lg.left[0],lg.left[1]);
-    // 文字は棚に沿って描かれるので、棚のローカル座標系に戻して矩形判定する
-    var a=S.V.rot||0, ca=Math.cos(a), sa=Math.sin(a), dx=px-lp[0], dy=py-lp[1];
-    var u=dx*ca+dy*sa, v=-dx*sa+dy*ca, wpx=lg.len*S.V.scale;
-    if(u>=0&&u<=wpx&&v<=4&&v>=-fpx*1.3*((ld.t||'').split('\n').length))return i; } return -1; }
+    var ld=S.leaders[i], fpx=Math.max(8,ld.h*S.V.scale), lines=(ld.t||'').split('\n').length;
+    // 文字は棚の画面左端から画面水平（ビルボード）＝軸並行 bbox で判定
+    var e2=P[1], f2=P[2], base=(e2[0]<=f2[0])?e2:f2, wpx=Math.hypot(f2[0]-e2[0],f2[1]-e2[1]);
+    var u=px-base[0], v=py-base[1];
+    if(u>=-2&&u<=wpx+fpx&&v<=4&&v>=-fpx*1.3*lines)return i; } return -1; }
   function hitSym(px,py){ for(var i=S.symbols.length-1;i>=0;i--){ var sy=S.symbols[i],p=w2s(sy.x,sy.y),r=Math.max(12,sy.size*S.V.scale/2+6); if(Math.hypot(px-p[0],py-p[1])<=r)return i; } return -1; }
   function hitPhoto(px,py){ for(var i=S.photos.length-1;i>=0;i--){ var ph=S.photos[i],p=w2s(ph.x,ph.y),r=Math.max(14,ph.size*S.V.scale*0.3); if(Math.hypot(px-p[0],py-p[1])<=r)return i; } return -1; }
   // ---- 消しゴム（v0.46）------------------------------------------------------
@@ -5360,6 +5368,8 @@
   function dxfCircle(l,x,y,r){ return dxfPair(0,'CIRCLE')+dxfPair(8,l)+dxfPair(10,x.toFixed(4))+dxfPair(20,y.toFixed(4))+dxfPair(30,'0.0')+dxfPair(40,r.toFixed(4)); }
   function dxfText(l,x,y,h,t){ return dxfPair(0,'TEXT')+dxfPair(8,l)+dxfPair(10,x.toFixed(4))+dxfPair(20,y.toFixed(4))+dxfPair(30,'0.0')+dxfPair(40,h.toFixed(3))+dxfPair(1,encDxf(t))+dxfPair(7,'STANDARD')+dxfPair(50,'0'); }
   function buildDxf(){
+    var _pr=primaryPdfRaster(), figRad=(S.dxfFrameH!==false&&_pr&&_pr.pgAff)?frameRotOf(_pr.pgAff):0, figCa=Math.cos(figRad), figSa=Math.sin(figRad);   // v0.75/0.77: 図郭回転θ（S.dxfFrameH=false なら 0＝X軸水平）
+    function rotF(px,py,ox,oy){ if(!figRad) return [px,py]; var dx=px-ox,dy=py-oy; return [ox+dx*figCa-dy*figSa, oy+dx*figSa+dy*figCa]; }   // 中心(ox,oy)まわりに θ で CCW 回転
     // v0.29: AC1018(R2004) 形式。理由:
     //   ・ハッチの透明度 → HATCH エンティティ(R13+)＋透明度 440(R2004+) が必要
     //   ・実機の Rhino が R12 旧式 POLYLINE のエンティティ線種を無視して点線が
@@ -5652,31 +5662,37 @@
       if(!t.t)return;
       if(t.dimg&&dimSkip[t.dimg])return;         // 寸法の寸法値は DIMENSION が持つ（v0.45）
       // 回転している文字は、基準点も回転した軸に沿って上へずらす（v0.44）
-      var rt=t.rot||0, tvx=-Math.sin(rt), tvy=Math.cos(rt);
-      dxf+=wMText(L.name,t.x+tvx*t.h,t.y+tvy*t.h,t.h,t.t,rt); });
+      // v0.75: ビルボード文字は図郭角θ・ワールド角ロック（寸法/回転指定）は t.rot
+      var rt=t.rot?t.rot:(t.dimg?0:figRad), tvx=-Math.sin(rt), tvy=Math.cos(rt);
+      dxf+=wMText(L.name,t.x+tvx*t.h,t.y+tvy*t.h,t.h,t.t,rt);
+      if(!t.dimg) dxf+=wCircle(L.name,t.x,t.y,t.h*0.15);   // v0.76: タップ点（基点＝GeoPDF /TSPt と同じ点・ワールド座標）を円で。InView ピボット参照
+    });
     S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0], P=leaderPts(ld);
       // 棚線は CAD の文字送り幅に足りるまで伸ばす（v0.32）。
       // アプリ画面の棚より長くなるが、CAD 図面として文字が棚に収まる方を優先する。
       var needW6=cadTextW(ld.t,ld.h)+ld.h*0.4;
       var sgn6=(P[2][0]>=P[1][0])?1:-1;
       if(Math.abs(P[2][0]-P[1][0])<needW6) P=[P[0],P[1],[P[1][0]+sgn6*needW6,P[1][1]]];
+      var _shx=Math.min(P[1][0],P[2][0])+ld.h*0.2;   // v0.75: 文字左端（世界水平）を回転前に確定
+      if(figRad){ P=[P[0],P[1],rotF(P[2][0],P[2][1],P[1][0],P[1][1])]; }   // 棚を図郭水平へ（アプリ v0.74・PDF v0.72 と一致）
       dxf+=wPoly(L.name,P,false);
       var dx=P[1][0]-P[0][0], dy=P[1][1]-P[0][1], ang=Math.atan2(dy,dx), hl=ld.h*0.8;
       dxf+=wLine(L.name,P[0][0],P[0][1],P[0][0]+hl*Math.cos(ang-0.42),P[0][1]+hl*Math.sin(ang-0.42));
       dxf+=wLine(L.name,P[0][0],P[0][1],P[0][0]+hl*Math.cos(ang+0.42),P[0][1]+hl*Math.sin(ang+0.42));
-      var lines=(ld.t||'').split('\n'), sx=Math.min(P[1][0],P[2][0])+ld.h*0.2;
+      var lines=(ld.t||'').split('\n'), ty6=P[1][1]+ld.h*1.25+(lines.length-1)*ld.h*1.2, sx=_shx;
       // 旗揚げ本文も MTEXT 1 個に（v0.30）。最上行のベースラインは
       // 棚+0.25h+(n-1)*1.2h なので、ブロック上端はそれ+1.0h。
-      if(ld.t) dxf+=wMText(L.name,sx,P[1][1]+ld.h*1.25+(lines.length-1)*ld.h*1.2,ld.h,ld.t); });
+      if(figRad){ var ta6=rotF(sx,ty6,P[1][0],P[1][1]); sx=ta6[0]; ty6=ta6[1]; }   // v0.75: 文字位置も図郭水平へ
+      if(ld.t) dxf+=wMText(L.name,sx,ty6,ld.h,ld.t,figRad); });
     // v0.49: 形は SYMDEF から。円は CIRCLE、2 点の開いた折れ線は LINE、
     // それ以外は LWPOLYLINE。既存 6 個の出力エンティティは v0.48 と同じ種類になる。
     S.symbols.forEach(function(sy){ var L=LAYERS[sy.layer]||LAYERS[0], r=sy.size/2, x=sy.x, y=sy.y;
       symPrims(sy).forEach(function(pr){
-        if(pr.k==='c'){ dxf+=wCircle(L.name,pr.x,pr.y,pr.r); }
-        else if(pr.pts.length===2&&!pr.close){
-          dxf+=wLine(L.name,pr.pts[0][0],pr.pts[0][1],pr.pts[1][0],pr.pts[1][1]); }
-        else { dxf+=wPoly(L.name,pr.pts,pr.close); } });
-      if(sy.label) dxf+=wText(L.name,x+r*1.25,y-sy.size*0.2,sy.size*0.45,sy.label); });
+        if(pr.k==='c'){ var cc=rotF(pr.x,pr.y,x,y); dxf+=wCircle(L.name,cc[0],cc[1],pr.r); }   // v0.75: 記号を図郭正立へ
+        else { var rp=pr.pts.map(function(q){return rotF(q[0],q[1],x,y);});
+          if(rp.length===2&&!pr.close) dxf+=wLine(L.name,rp[0][0],rp[0][1],rp[1][0],rp[1][1]);
+          else dxf+=wPoly(L.name,rp,pr.close); } });
+      if(sy.label){ var lp=rotF(x+r*1.25,y-sy.size*0.2,x,y); dxf+=wText(L.name,lp[0],lp[1],sy.size*0.45,sy.label); } });
     // 写真の属性（番号・方位・メモ）は XDATA として円に付ける（v0.35）。
     // 1001=APPID / 1000=文字列。図形とは別の属性情報なので CAD 側で
     // 図面の見た目を変えずに保持できる。
@@ -5712,6 +5728,7 @@
     return dxf.replace('__HANDSEED__',(HS+1).toString(16).toUpperCase());
   }
   function anyDrawing(){ return S.strokes.length||S.texts.length||S.leaders.length||S.symbols.length||S.photos.length; }
+  (function(){ var _fh=document.getElementById('dxfFrameH'); if(_fh){ _fh.checked=(S.dxfFrameH!==false); _fh.onchange=function(){ S.dxfFrameH=this.checked; }; } })();
   document.getElementById('btnDxf').onclick=function(){ if(!anyDrawing()){ toast('書き出す作図がありません',true); return; }
     shareOrDownload(fname('dxf'), buildDxf(), 'application/dxf'); };
 
