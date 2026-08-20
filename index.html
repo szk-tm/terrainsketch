@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.78';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.79';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5424,6 +5424,7 @@
       +p(9,'$INSUNITS')+p(70,6)              // 6=メートル
       +p(9,'$MEASUREMENT')+p(70,1)           // メートル法
       +p(9,'$LTSCALE')+p(40,'1.0')+p(9,'$CELTSCALE')+p(40,'1.0')
+      +p(9,'$PLINEGEN')+p(70,1)             // v0.79: 以後 CAD 側で描く線にも線種生成を引き継ぐ
       +p(0,'ENDSEC');
 
     // ---- TABLES --------------------------------------------------------
@@ -5570,8 +5571,14 @@
     // 既定（lwm 無し）では 370 を書かないので、従来の出力はバイト単位で変わらない。
     function lwCode(m){ return (m<0.85)?13:((m<1.25)?25:50); }
     function wPoly(layer,P,closed,ltype,lwm){
+      // v0.79: 線種付きのポリラインは group 70 に bit 128（線種生成 / AutoCAD の PLINEGEN）を立てる。
+      //   OFF だと破線パターンが頂点ごとに先頭から仕切り直され、頂点間隔がダッシュ長より
+      //   短い曲線ストロークではギャップが一度も現れず CAD で実線に見える（実測: DASHED_12M の
+      //   曲線は平均セグメント 3.1〜5.0m でダッシュ 12m 未満が 98〜100%）。
+      //   線種なし（実線）は従来どおり 0/1 のままなので、既存の出力は変わらない。
+      var fl=(closed?1:0)|(ltype?128:0);
       var o=ehead('LWPOLYLINE',layer,(ltype?p(6,ltype):'')+(lwm?p(370,lwCode(lwm)):''))
-        +p(100,'AcDbPolyline')+p(90,P.length)+p(70,closed?1:0), i;
+        +p(100,'AcDbPolyline')+p(90,P.length)+p(70,fl), i;
       for(i=0;i<P.length;i++) o+=p(10,P[i][0].toFixed(4))+p(20,P[i][1].toFixed(4));
       return o; }
     function wLine(layer,x1,y1,x2,y2){ return ehead('LINE',layer)+p(100,'AcDbLine')
@@ -5639,7 +5646,12 @@
       // 右→左の順で書くと文字が上下逆さに表示される（実機で確認）。
       // 寸法線の位置・測定値・文字位置は 10/11 で与えているので、並べ替えても図は変わらない。
       var da=d.a, db=d.b, ddx=db[0]-da[0], ddy=db[1]-da[1];
-      if(ddx<-1e-9||(Math.abs(ddx)<=1e-9&&ddy<0)){ var tmp=da; da=db; db=tmp; }
+      // v0.79: 「左右」は図郭水平軸で判定する（frameRad=-figRad。旗揚げの棚向きと同じ式）。
+      //   上下逆に見えるかどうかは見ている向きで決まるので、図枠水平で出す以上は図郭基準が一貫する。
+      //   figRad=0（θ=0 / トグル OFF）では hx=ddx・hy=ddy となり従来と同じ＝出力はバイト不変。
+      var _fr=-figRad, _c=Math.cos(_fr), _s=Math.sin(_fr);
+      var hx=ddx*_c-ddy*_s, hy=ddx*_s+ddy*_c;
+      if(hx<-1e-9||(Math.abs(hx)<=1e-9&&hy<0)){ var tmp=da; da=db; db=tmp; }
       return ehead('DIMENSION',L.name)
         +p(100,'AcDbDimension')+p(280,0)+p(2,b.name)
         +p(10,d.B[0].toFixed(4))+p(20,d.B[1].toFixed(4))+p(30,'0.0')
@@ -5976,6 +5988,13 @@
       //   ビルボード文字（rot=0）は pAng=0 → /TSRot 無し → Reader が θ で図郭正立。
       //   北上/追記経路は frameRad を渡さない → pAng=rot＝従来どおり（後方互換）。
       var pAng = rot ? (rot + (frameRad||0)) : 0;
+      // v0.79: 契約の値域 (-90°, +90°] に収める（読み手は値域外を信用しない＝水平化する）。
+      //   ±180° の折り返しは同じ直線を逆向きに書くだけなので、世界での文字の向き（mod 180）は
+      //   変わらず、紙面で文字が上下逆にならない。rot 生成時と同じ規則（真南 -90° は +90° に返す）。
+      if(pAng){ while(pAng>Math.PI) pAng-=2*Math.PI; while(pAng<-Math.PI) pAng+=2*Math.PI;
+        if(pAng>Math.PI/2+1e-9||pAng<-Math.PI/2+1e-9) pAng=pAng+Math.PI;
+        while(pAng>Math.PI) pAng-=2*Math.PI;
+        if(Math.abs(pAng)<1e-9) pAng=0; }
       var R=[tl[0],tl[1]-hpt,tl[0]+wpt,tl[1]], extra='';
       if(pAng){ var rc=Math.cos(pAng), rs=Math.sin(pAng), k;
         var C=[[0,0],[wpt,0],[wpt,-hpt],[0,-hpt]], xs=[], ys=[];
