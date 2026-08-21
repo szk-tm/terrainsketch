@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.85';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.86';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2939,7 +2939,12 @@
     ctx.fillStyle=col; ctx.strokeStyle='#fff'; ctx.lineWidth=Math.max(1.5,lw(1)); ctx.beginPath(); ctx.arc(p[0],p[1],r,0,7); ctx.fill(); ctx.stroke();
     if(NOTXT)return;
     var fpx=Math.max(10,s*0.35); ctx.font='700 '+fpx+'px ui-monospace,monospace'; ctx.textBaseline='top';
-    var lab=pno(ph); ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillText(lab,p[0]+r+4+1,p[1]+r*0.2+1); ctx.fillStyle=col; ctx.fillText(lab,p[0]+r+4,p[1]+r*0.2); }
+    // v0.86: ラベルは円の中心に縦を揃え、横は文字高に比例した隙間で置く（PDF・DXF と同じ式）。
+    //   従来は 3 経路で縦位置がばらばら（画面 -r*0.2 / PDF -size*0.12 / DXF -size*0.4）で、
+    //   とくに DXF が円半径の約2倍も下がっていてラベルが円から切り離されて見えていた。
+    //   textBaseline='top' なので、中心揃えは上端 = 中心 - fpx/2。
+    var lab=pno(ph), lgap=Math.max(1,fpx*0.1), lx0=p[0]+r+lgap, ly0=p[1]-fpx*0.5;
+    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillText(lab,lx0+1,ly0+1); ctx.fillStyle=col; ctx.fillText(lab,lx0,ly0); }
   function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
   function accent(){ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#f5a524'; }
   function niceLen(m){ var p=Math.pow(10,Math.floor(Math.log10(m))); var f=m/p; return (f>=5?5:f>=2?2:1)*p; }
@@ -5746,7 +5751,11 @@
         var ang=Math.atan2(tipy-ph.y,tipx-ph.x), hl=ph.size*0.28;
         dxf+=wLine(l,tipx,tipy,tipx-hl*Math.cos(ang-0.4),tipy-hl*Math.sin(ang-0.4));
         dxf+=wLine(l,tipx,tipy,tipx-hl*Math.cos(ang+0.4),tipy-hl*Math.sin(ang+0.4)); }
-      dxf+=wText(l,ph.x+r+ph.size*0.12,ph.y-ph.size*0.4,ph.size*0.35,pno(ph)); });
+      // v0.86: 縦は円の中心に揃え（TEXT は左・ベースライン基準。字面高さは約 0.7h なので
+      //   baseline = 中心 - h*0.35）、横の隙間は文字高に比例（h*0.1）。画面・PDF と同じ式。
+      //   従来は下に size*0.4（実測 4.0m）も離れており、円中心から文字まで 5.25m あった。
+      var phH6=ph.size*0.35;
+      dxf+=wText(l,ph.x+r+phH6*0.1,ph.y-phH6*0.35,phH6,pno(ph)); });
     dxf+=p(0,'ENDSEC');
 
     // ---- OBJECTS（R13+ 必須の名前付きオブジェクト辞書）--------------------
@@ -6106,7 +6115,10 @@
         seg([ph.x,ph.y],tip,col,true);
         var ang=Math.atan2(tip[1]-ph.y,tip[0]-ph.x), hl=ph.size*0.28;
         ink([[[tip[0]-hl*Math.cos(ang-0.4),tip[1]-hl*Math.sin(ang-0.4)],tip,[tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]]],col); }
-      ftext(pno(ph), ph.x+r+ph.size*0.12, ph.y-ph.size*0.12, ph.size*0.35, col);
+      // v0.86: 縦は円の中心に揃え（ftext は左上基準なので上端 = 中心 + h/2）、
+      //   横の隙間は文字高に比例（h*0.1）。画面・DXF と同じ式。
+      var phH=ph.size*0.35;
+      ftext(pno(ph), ph.x+r+phH*0.1, ph.y+phH*0.5, phH, col);
       // 写真の属性（番号・方位・メモ）を注釈として持たせる（v0.35）。
       // 図形ではなく属性情報なので Hidden(/F 2) の Text 注釈にし、/Subj(photo) で
       // 種別を明示する。読み手はこれを拾って Rhino のユーザーテキスト等に移せる。
@@ -6360,7 +6372,10 @@
         var ang=Math.atan2(tip[1]-ph.y,tip[0]-ph.x),hl=ph.size*0.28;
         stroke([[tip[0]-hl*Math.cos(ang-0.4),tip[1]-hl*Math.sin(ang-0.4)],tip,
                 [tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]],PHOTOL.color,false); }
-      label('T'+ph.id, ph.x+r+ph.size*0.12, ph.y-ph.size*0.12); });
+      // v0.86: 焼き込みも他の 3 経路と同じ置き方に（label は ftext と同じ左上基準）。
+      //   縦は円の中心に揃え（上端 = 中心 + h/2）、横の隙間は文字高に比例（h*0.1）。
+      var phHo=ph.size*0.35;
+      label('T'+ph.id, ph.x+r+phHo*0.1, ph.y+phHo*0.5); });
     ops+='Q\n';
     return {ops:ops, w2p:w2p};
   }
