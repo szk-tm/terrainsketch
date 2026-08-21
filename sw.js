@@ -16,7 +16,7 @@
  */
 'use strict';
 
-var VER   = '0.83';                        // ← 本体 APPVER と一致させること（build.py が検証）
+var VER   = '0.84';                        // ← 本体 APPVER と一致させること（build.py が検証）
 var CACHE = 'terrainsketch-v' + VER;
 
 var CORE_REQUIRED = './index.html';        // これが取れなければ install を失敗させる

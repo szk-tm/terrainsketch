@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.83';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.84';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5949,7 +5949,14 @@
     for(var i=0;i<ds.length;i++){ var wmm=W*1000/ds[i], hmm=H*1000/ds[i];
       if((wmm<=410&&hmm<=287)||(wmm<=287&&hmm<=410)) return ds[i]; }
     return ds[ds.length-1]; }
-  function annObjs(w2p,mPerPt,frameRad){
+  // v0.84: framed は「図郭向き経路（makeGeoPdfFramed）から呼ばれたか」を明示するフラグ。
+  //   旗揚げの 3点+/TSLeadRot か 2点かは、これで決める（frameRad の数値的な真偽値では決めない）。
+  //   理由: frameRad は実測地座標変換を経た角度なので、真に回転 0 の図郭でも機械誤差で
+  //   1e-8〜1e-10 度程度の残差が乗り、bit-exact な 0.0 にはほぼならない
+  //   （JS の if(frameRad) は非ゼロなら常に true＝「傾いている」側に倒れてしまう）。
+  //   rW の回転行列や /TSRot・棚の左右判定は、その tiny な残差込みの frameRad をそのまま使う
+  //   （数値としては無視できる差にしかならないので、そちらは変更しない）。
+  function annObjs(w2p,mPerPt,frameRad,framed){
     var A=[]; var minWpt=1.13; // 0.4mm
     // v0.70: 図郭向き書き出しで、ビルボード（画面正立）の幾何を図郭に正立させる回転。
     //   +Y→+X 規約。frameRad=atan2(b,e)（=図郭角）なら、ワールド北上テンプレートが
@@ -6050,7 +6057,10 @@
       // 文字が棚の端から始まるので、これで左右どちらでも「最終点 = 文字の位置」になる。
       // 焼き込み・DXF・画面は変更していない（棚線は今までどおり描かれる）。
       var lx=Math.min(P[1][0],P[2][0]);
-      if(frameRad){ var se=rW(P[2][0],P[2][1],P[1][0],P[1][1]);   // v0.72: 棚端を折れ点まわりに図郭水平へ回す
+      // v0.84【契約・変更禁止】3点+/TSLeadRot か 2点かは、図郭向き経路（framed）で決める。
+      //   frameRad の真偽値では決めない（実測地座標由来の tiny な残差角で誤爆するため。上の
+      //   annObjs 冒頭コメント参照）。makeGeoPdfFramed だけが framed=true を渡す。
+      if(framed){ var se=rW(P[2][0],P[2][1],P[1][0],P[1][1]);   // v0.72: 棚端を折れ点まわりに図郭水平へ回す
         // v0.82【契約・変更禁止】図郭経路では /TSLeadRot を必ず書く。値が 0 でも省略しないこと。
         //   GhContourPdf は「/TSLeadRot が有るとき」だけ最終セグメント＝棚と確定し射影で左右を決める。
         //   無いと旧ヒューリスティック（世界水平のときだけ棚）に落ちるが、傾いた図郭では棚は
@@ -6065,7 +6075,7 @@
       // 実装は 1.2h で、プラグイン側の実測（2 行の旗揚げで厳密一致）とも合っている。
       // 誤った注記が仕様書に写っていたので、あわせて直した。
       var top=P[1][1]+ld.h*0.25+(lines.length-1)*ld.h*CAD_LINE_PITCH+ld.h*0.8;
-      if(frameRad){ var ta=rW(sx,top,P[1][0],P[1][1]);   // v0.72: 文字位置も棚に合わせて回す（landing 終端＝文字位置）
+      if(framed){ var ta=rW(sx,top,P[1][0],P[1][1]);   // v0.72: 文字位置も棚に合わせて回す（landing 終端＝文字位置）
         ftext(ld.t,ta[0],ta[1],ld.h,col,Math.max(ld.len||0,needW),0,
           '/Subj(leader)/TSLead('+ld.id+')'); }
       else ftext(ld.t,sx,top,ld.h,col,Math.max(ld.len||0,needW),0,
@@ -6159,7 +6169,7 @@
     corners.forEach(function(cp){ var w=affApply(pg,cp[0],cp[1]); cornersW.push(w); var g=ll(w[0],w[1]); gpts.push(g[0],g[1]); });
     var inv=affInv(pg);
     function w2p(X,Y){ return affApply(inv,X,Y); }
-    var annots=annObjs(w2p,mPerPt,Math.atan2(pg.b,pg.e));   // v0.70: 図郭角を渡す
+    var annots=annObjs(w2p,mPerPt,Math.atan2(pg.b,pg.e),true);   // v0.70: 図郭角を渡す／v0.84: framed=true
     var denom=Math.round(mPerPt*72000/25.4);
     var title='RouteMap 1:'+denom;
     var pdf=buildGeoPdfBytes(jpeg,pxW,pxH,Wpt,Hpt,S.Z,gpts,annots,title);
