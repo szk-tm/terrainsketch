@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.81';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.82';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -6051,6 +6051,10 @@
       // 焼き込み・DXF・画面は変更していない（棚線は今までどおり描かれる）。
       var lx=Math.min(P[1][0],P[2][0]);
       if(frameRad){ var se=rW(P[2][0],P[2][1],P[1][0],P[1][1]);   // v0.72: 棚端を折れ点まわりに図郭水平へ回す
+        // v0.82【契約・変更禁止】図郭経路では /TSLeadRot を必ず書く。値が 0 でも省略しないこと。
+        //   GhContourPdf は「/TSLeadRot が有るとき」だけ最終セグメント＝棚と確定し射影で左右を決める。
+        //   無いと旧ヒューリスティック（世界水平のときだけ棚）に落ちるが、傾いた図郭では棚は
+        //   世界水平にならないので、キーを省くと棚検出が静かに外れる。0 は「書かない」ではなく「0 と書く」。
         ink([[P[0],[P[1][0],P[1][1]],se],[wA,P[0],wB]],col,null,
           '/Subj(leader)/TSLead('+ld.id+')/TSLeadRot 0'); }        // 明示3点+/TSLeadRot（世界棚方向=θ+0）
       else ink([[P[0],[lx,P[1][1]]],[wA,P[0],wB]],col,null,
