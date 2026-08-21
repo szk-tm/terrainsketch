@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.80';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.81';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2755,7 +2755,17 @@
       if(!t.dim){ ctx.fillStyle=L.color; ctx.beginPath(); ctx.arc(p[0],p[1],3,0,7); ctx.fill(); }
       if(fpx>=5){ ctx.font='600 '+fpx+'px -apple-system,sans-serif'; ctx.textBaseline='alphabetic';
         // v0.44: 回転（寸法線に平行）。world 角 r は画面上では (S.V.rot - r) になる。
-        var rr=t.rot?((S.V.rot||0)-t.rot):0, ox=t.dim?0:5, oy=t.dim?0:-2;
+        // v0.81: その差を「読める向き」に折り返す。t.rot は生成時に (-90,90] でも、
+        //   S.V.rot を引いた差は値域外になりうる（実測: θ=+203° の図郭ビューで 135.767°＝上下逆）。
+        //   v0.79 で /TSRot を正規化したので、直さないと「PDF は正立・画面だけ上下逆」になる。
+        //   判定は cos(rr) の符号で行う（画面は y が下向きなので、鉛直のときの可読向きは
+        //   世界角の +90 ではなく画面角 -90＝下から上へ読む形。t.rot=+90 のときの従来値と同じ）。
+        //   折り返しは mod 180 で同じ直線なので意味は変わらず、読める向きになるだけ。
+        //   北上（S.V.rot=0）では rr=-t.rot で、生成時の値域なら折り返しは起きない＝従来どおり。
+        var rr=t.rot?normAng((S.V.rot||0)-t.rot):0, ox=t.dim?0:5, oy=t.dim?0:-2;
+        if(rr){ var _cs=Math.cos(rr);
+          if(_cs<-1e-9) rr=normAng(rr+Math.PI);
+          else if(Math.abs(_cs)<=1e-9) rr=-Math.PI/2; }
         if(rr){ ctx.save(); ctx.translate(p[0],p[1]); ctx.rotate(rr); p=[0,0]; }
         var lines=(t.t||'').split('\n'); for(var i=0;i<lines.length;i++){ ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillText(lines[i],p[0]+ox+1,p[1]+oy+i*fpx*1.2+1); ctx.fillStyle=L.color; ctx.fillText(lines[i],p[0]+ox,p[1]+oy+i*fpx*1.2); }
         if(rr) ctx.restore(); }
