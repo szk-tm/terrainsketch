@@ -2366,7 +2366,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.84';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.85';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5384,7 +5384,16 @@
   function dxfCircle(l,x,y,r){ return dxfPair(0,'CIRCLE')+dxfPair(8,l)+dxfPair(10,x.toFixed(4))+dxfPair(20,y.toFixed(4))+dxfPair(30,'0.0')+dxfPair(40,r.toFixed(4)); }
   function dxfText(l,x,y,h,t){ return dxfPair(0,'TEXT')+dxfPair(8,l)+dxfPair(10,x.toFixed(4))+dxfPair(20,y.toFixed(4))+dxfPair(30,'0.0')+dxfPair(40,h.toFixed(3))+dxfPair(1,encDxf(t))+dxfPair(7,'STANDARD')+dxfPair(50,'0'); }
   function buildDxf(){
-    var _pr=primaryPdfRaster(), figRad=(S.dxfFrameH!==false&&_pr&&_pr.pgAff)?frameRotOf(_pr.pgAff):0, figCa=Math.cos(figRad), figSa=Math.sin(figRad);   // v0.75/0.77: 図郭回転θ（S.dxfFrameH=false なら 0＝X軸水平）
+    var _pr=primaryPdfRaster();
+    // v0.85: 図郭向き DXF か（＝figRad を実値で計算する条件そのもの）を明示フラグにする。
+    //   figRad の真偽値では判定しない。理由は v0.84 の annObjs/frameRad と同じ:
+    //   frameRotOf(pgAff) は実測地座標変換を経た角度なので、真に回転 0 の図郭でも
+    //   bit-exact な 0.0 にはほぼならない。ここで figRad が真偽値ゲートに使われている箇所
+    //   （棚端・文字位置を rotF で回すか）は連続座標への適用で実害は無い（tiny な角度による
+    //   変位が DXF 出力精度 mm を大幅に下回るため）が、同じ土台の値である以上、将来の
+    //   変更で意味が変わらないよう PDF 側と同じ考え方（明示フラグ）に揃えておく。
+    var figFramed=!!(S.dxfFrameH!==false&&_pr&&_pr.pgAff);
+    var figRad=figFramed?frameRotOf(_pr.pgAff):0, figCa=Math.cos(figRad), figSa=Math.sin(figRad);   // v0.75/0.77: 図郭回転θ（S.dxfFrameH=false なら 0＝X軸水平）
     function rotF(px,py,ox,oy){ if(!figRad) return [px,py]; var dx=px-ox,dy=py-oy; return [ox+dx*figCa-dy*figSa, oy+dx*figSa+dy*figCa]; }   // 中心(ox,oy)まわりに θ で CCW 回転
     // v0.29: AC1018(R2004) 形式。理由:
     //   ・ハッチの透明度 → HATCH エンティティ(R13+)＋透明度 440(R2004+) が必要
@@ -5702,7 +5711,7 @@
       var sgn6=(P[2][0]>=P[1][0])?1:-1;
       if(Math.abs(P[2][0]-P[1][0])<needW6) P=[P[0],P[1],[P[1][0]+sgn6*needW6,P[1][1]]];
       var _shx=Math.min(P[1][0],P[2][0])+ld.h*0.2;   // v0.75: 文字左端（世界水平）を回転前に確定
-      if(figRad){ P=[P[0],P[1],rotF(P[2][0],P[2][1],P[1][0],P[1][1])]; }   // 棚を図郭水平へ（アプリ v0.74・PDF v0.72 と一致）
+      if(figFramed){ P=[P[0],P[1],rotF(P[2][0],P[2][1],P[1][0],P[1][1])]; }   // 棚を図郭水平へ（アプリ v0.74・PDF v0.72 と一致。v0.85: 判定は figFramed）
       dxf+=wPoly(L.name,P,false);
       var dx=P[1][0]-P[0][0], dy=P[1][1]-P[0][1], ang=Math.atan2(dy,dx), hl=ld.h*0.8;
       dxf+=wLine(L.name,P[0][0],P[0][1],P[0][0]+hl*Math.cos(ang-0.42),P[0][1]+hl*Math.sin(ang-0.42));
@@ -5710,7 +5719,7 @@
       var lines=(ld.t||'').split('\n'), ty6=P[1][1]+ld.h*1.25+(lines.length-1)*ld.h*1.2, sx=_shx;
       // 旗揚げ本文も MTEXT 1 個に（v0.30）。最上行のベースラインは
       // 棚+0.25h+(n-1)*1.2h なので、ブロック上端はそれ+1.0h。
-      if(figRad){ var ta6=rotF(sx,ty6,P[1][0],P[1][1]); sx=ta6[0]; ty6=ta6[1]; }   // v0.75: 文字位置も図郭水平へ
+      if(figFramed){ var ta6=rotF(sx,ty6,P[1][0],P[1][1]); sx=ta6[0]; ty6=ta6[1]; }   // v0.75: 文字位置も図郭水平へ（v0.85: 判定は figFramed）
       if(ld.t) dxf+=wMText(L.name,sx,ty6,ld.h,ld.t,figRad); });
     // v0.49: 形は SYMDEF から。円は CIRCLE、2 点の開いた折れ線は LINE、
     // それ以外は LWPOLYLINE。既存 6 個の出力エンティティは v0.48 と同じ種類になる。
