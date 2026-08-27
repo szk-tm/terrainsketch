@@ -152,6 +152,13 @@
     /* ボタン等の“チップ”の透明度。ここだけで濃さを調整できる（大きいほど不透明） */
     --chipA:.34;      /* 上部の通常ボタン（白フロスト） */
     --chipAP:.74;     /* 上部の主ボタン（オレンジ） */
+    /* v0.88: 保存アイコン（SVG）の色。絵文字 💾 では色を指定できず
+       （iPad の Apple Color Emoji は濃紺〜黒で青の彩度がほぼ無い）、
+       押せる／押せないの差が opacity だけになっていたため SVG に替えた。
+       青みを強く／弱くしたいときは --saveOn だけを動かす。
+       v0.87 で入れた「地色を青にする」（--saveB / --saveA）は撤回した。 */
+    --saveOn:#0b52c0;  /* 保存が押せるとき（強い青。v0.89 で利用者の指定により #1668e0 から濃くした） */
+    --saveOff:#6b7785; /* 保存が押せないとき（灰。さらに .dim で opacity:.4） */
     --chipBlur:20px;  /* 背景ぼかし。透明度を上げたぶんこれで可読性を確保する */
     --railA:.62;      /* 左のツールレール（濃色） */
     /* 下部ステータス帯の不透明度。v0.59 で .84 -> .20 にしたが、
@@ -196,6 +203,14 @@
      :not() を足して詳細度で確実に勝たせる（v0.17 以前は塗りが出ていなかった）。 */
   /* 履歴が空のときは押せないことを見た目で示す（押しても何も起きない） */
   #top button.dim{opacity:.4;}
+  /* v0.88: 保存アイコンは単色 SVG（currentColor）なので、押せるかどうかを
+     **色**で示せる。地色（チップ）は他のボタンと同じ白フロストのまま。
+     `#top button:not(.primary)` が color を !important で指定しているため、
+     id を 2 つ持つ選択子で詳細度を上げて勝たせる（v0.17 の .on と同じ理由）。
+     押せないときは灰 + 既存の .dim（opacity:.4）で二重に差が付く。 */
+  #top .ico svg{width:23px;height:23px;display:block;pointer-events:none;}
+  #top button#btnSaveTop{color:var(--saveOn)!important;}
+  #top button#btnSaveTop.dim{color:var(--saveOff)!important;}
   #top button.on:not(.primary),#top button.on{
     background:rgba(245,165,36,.9)!important;color:#241a06!important;
     border:1px solid rgba(255,255,255,.6)!important;outline:none;text-shadow:none;
@@ -606,7 +621,9 @@
   <!-- v0.63: 開く と 戻る の間に保存（利用者の指定）。中身は ☰ の「スケッチ保存(.json)」と同じ。
        v0.62 で .json が元ファイルの印まで持つようになり、1 タップで
        「いまの状態をまるごと残す」操作になったので上部へ出した。 -->
-  <button class="ghost ico" id="btnSaveTop" title="保存（.json）— 地図・作図・設定・表示位置をまとめて残す" aria-label="保存">💾</button>
+  <!-- v0.88: 💾（絵文字）は色を指定できないため単色 SVG に替えた。
+       色は CSS の --saveOn / --saveOff（押せる=青 / 押せない=灰）。 -->
+  <button class="ghost ico" id="btnSaveTop" title="保存（.json）— 地図・作図・設定・表示位置をまとめて残す" aria-label="保存"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.8 3h10.7L21 9.5v10.7a.8.8 0 0 1-.8.8H3.8a.8.8 0 0 1-.8-.8V3.8a.8.8 0 0 1 .8-.8z"/><rect x="8.7" y="3" width="6.6" height="5.6" rx=".5" fill="#fff"/><rect x="12.4" y="3.8" width="1.9" height="4.1" rx=".3" fill="currentColor"/><rect x="6.8" y="12.5" width="10.4" height="8.5" rx=".7" fill="#fff"/><path d="M8.8 14.9h6.4M8.8 17.1h6.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/></svg></button>
   <button class="ghost ico" id="btnUndo" title="元に戻す">↩︎</button>
   <button class="ghost ico" id="btnRedo" title="やり直す">↪︎</button>
   <div class="spacer"></div>
@@ -2366,7 +2383,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.86';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.89';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
