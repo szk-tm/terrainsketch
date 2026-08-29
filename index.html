@@ -211,6 +211,16 @@
   #top .ico svg{width:23px;height:23px;display:block;pointer-events:none;}
   #top button#btnSaveTop{color:var(--saveOn)!important;}
   #top button#btnSaveTop.dim{color:var(--saveOff)!important;}
+  /* v0.90: 青=未保存の変更あり／灰(.saved)=この端末に保存済み。
+     .dim（中身なし）と同じ灰なので、意味は「いま保存する理由が無い」で共通。
+     選択子は .dim と同格（id2+class1）で、後に書いたこちらが同点勝ちするが、
+     どちらも --saveOff なので実害はない。 */
+  #top button#btnSaveTop.saved{color:var(--saveOff)!important;}
+  /* v0.90: プロジェクト名（上部バー中央）。長い名前は省略記号で詰める。
+     狭い画面では出さない（ツールの当たりを狭めない）。 */
+  #projName{max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:13px;line-height:1.2;}
+  @media (max-width:700px){ #projName{display:none;} }
   #top button.on:not(.primary),#top button.on{
     background:rgba(245,165,36,.9)!important;color:#241a06!important;
     border:1px solid rgba(255,255,255,.6)!important;outline:none;text-shadow:none;
@@ -623,9 +633,13 @@
        「いまの状態をまるごと残す」操作になったので上部へ出した。 -->
   <!-- v0.88: 💾（絵文字）は色を指定できないため単色 SVG に替えた。
        色は CSS の --saveOn / --saveOff（押せる=青 / 押せない=灰）。 -->
-  <button class="ghost ico" id="btnSaveTop" title="保存（.json）— 地図・作図・設定・表示位置をまとめて残す" aria-label="保存"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.8 3h10.7L21 9.5v10.7a.8.8 0 0 1-.8.8H3.8a.8.8 0 0 1-.8-.8V3.8a.8.8 0 0 1 .8-.8z"/><rect x="8.7" y="3" width="6.6" height="5.6" rx=".5" fill="#fff"/><rect x="12.4" y="3.8" width="1.9" height="4.1" rx=".3" fill="currentColor"/><rect x="6.8" y="12.5" width="10.4" height="8.5" rx=".7" fill="#fff"/><path d="M8.8 14.9h6.4M8.8 17.1h6.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/></svg></button>
+  <button class="ghost ico" id="btnSaveTop" title="保存 — この端末のプロジェクトに上書き保存します（ファイルへの書き出しは ☰ メニュー）" aria-label="保存"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.8 3h10.7L21 9.5v10.7a.8.8 0 0 1-.8.8H3.8a.8.8 0 0 1-.8-.8V3.8a.8.8 0 0 1 .8-.8z"/><rect x="8.7" y="3" width="6.6" height="5.6" rx=".5" fill="#fff"/><rect x="12.4" y="3.8" width="1.9" height="4.1" rx=".3" fill="currentColor"/><rect x="6.8" y="12.5" width="10.4" height="8.5" rx=".7" fill="#fff"/><path d="M8.8 14.9h6.4M8.8 17.1h6.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/></svg></button>
   <button class="ghost ico" id="btnUndo" title="元に戻す">↩︎</button>
   <button class="ghost ico" id="btnRedo" title="やり直す">↪︎</button>
+  <div class="spacer"></div>
+  <!-- v0.90: プロジェクト名。タップで変更。書き出しファイル名（fname）にも使われる。
+       spacer 2 枚に挟んで中央に置く（11 インチ横持ちの余白をここが吸収する）。 -->
+  <button class="ghost" id="projName" title="プロジェクト名（タップで変更。書き出しファイル名にも使われます）">無題のプロジェクト</button>
   <div class="spacer"></div>
   <button class="ghost" id="btnNorth" title="地図の向き（タップで北を上に戻す／長押しで回転ロック）"><span class="na" id="northArrow">↑</span><span class="nl" id="northLbl">N</span></button>
   <button class="ghost ico" id="btnFit" title="全体表示">⤢</button>
@@ -760,14 +774,14 @@
     </div>
 
     <div class="dPane" id="paneOut" role="tabpanel">
-    <div class="dSec">出力 / プロジェクト</div>
+    <div class="dSec">書き出し / 取り込み</div>
     <div class="dBtns">
       <button id="btnDxf" class="primary">⬇ DXF書き出し</button>
       <button id="btnZip" class="primary">📦 一括書き出し(ZIP)</button>
       <button id="btnGeoPdf">🗺 GeoPDF書き出し</button>
-      <button id="btnBundle">🗄 バンドル保存(.zip)</button>
-      <button id="btnSave">💾 スケッチ保存(.json)</button>
-      <button id="btnLoad">📁 読込（.json / バンドル.zip）</button>
+      <button id="btnBundle">🗄 バンドル書き出し(.zip)</button>
+      <button id="btnSave">📤 プロジェクト書き出し(.json)</button>
+      <button id="btnLoad">📁 取り込み（.json / バンドル.zip）</button>
       <button id="btnClearAll" class="danger">🗑 作図を全消去</button>
     </div>
     <label class="dChk" style="display:flex;align-items:center;gap:8px;margin:8px 2px 0;font-size:14px;line-height:1.35;">
@@ -2383,7 +2397,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.89';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.90';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -6938,7 +6952,7 @@
         png:png}; }); }
     var phs=S.photos;
     if(opts.stripPhotos) phs=S.photos.map(function(p){ var q={}; for(var k in p)if(k!=='img')q[k]=p[k]; return q; });
-    return { format:'TerrainSketch.Project', version:4, savedAt:new Date().toISOString(), zone:S.Z, decl:S.decl, photoSeq:S.photoSeq, rotLock:!!S.rotLock, zoomLock:!!S.zoomLock, anchorIn:S.anchorIn!==false, smooth:SMOOTH_PASSES(), snap:S.snap!==false,
+    return { format:'TerrainSketch.Project', version:4, savedAt:new Date().toISOString(), name:(S.projName||undefined), zone:S.Z, decl:S.decl, photoSeq:S.photoSeq, rotLock:!!S.rotLock, zoomLock:!!S.zoomLock, anchorIn:S.anchorIn!==false, smooth:SMOOTH_PASSES(), snap:S.snap!==false,
       snapPx:snapRadius(), snapStart:S.snapStart!==false, snapEnd:S.snapEnd!==false,
       snapVertex:S.snapVertex!==false, snapEndOnly:S.snapEndOnly===true,
       meas:(S.meas&&S.meas.pts.length)?S.meas.pts:undefined, profEx:S.profEx||0,   // v0.42
@@ -6957,15 +6971,34 @@
       // 「保存当時の状態」に戻らなかった。無い古い保存は従来どおり全体表示に落ちる。
       view:viewNow(),
       dims:S.dims }; }   // v0.45
-  // v0.63: 上部バーの 💾 と ☰ の「スケッチ保存(.json)」は同じ処理を呼ぶ。
-  // 二重に書くと片方だけ直して食い違うので、必ずここを通す。
+  // v0.63→v0.90: 役割を分けた。
+  //   ☰ の「プロジェクト書き出し(.json)」= saveProjectJson（共有シートでファイルに出す）
+  //   上部の 💾                        = commitProject（この端末のプロジェクトへ上書き保存）
+  // JSON をファイルに書き出す処理は従来どおり saveProjectJson の 1 か所だけ。
   function saveProjectJson(){
     if(!anyDrawing()&&!S.rasters.length){ toast('保存する内容がありません',true); return; }
     showLoad('保存ファイルを作成中…'); setTimeout(function(){
       shareOrDownload(fname('json'), JSON.stringify(buildProject()), 'application/json');
       hideLoad(); },30); }
   document.getElementById('btnSave').onclick=saveProjectJson;
-  document.getElementById('btnSaveTop').onclick=saveProjectJson;
+  // v0.90: 上書き保存。中身は自動保存の即時実行（flushAutosave）そのもの。
+  // 別の保存経路を新設すると自動保存と食い違うので、必ず同じ道を通す。
+  function commitProject(){
+    if(!anyDrawing()&&!S.rasters.length){ toast('保存する内容がありません',true); return; }
+    flushAutosave();
+    toast('保存しました'+(S.projName?('：'+S.projName):'')); }
+  document.getElementById('btnSaveTop').onclick=commitProject;
+  // v0.90: プロジェクト名の表示と変更（上部バー中央のチップ）
+  function updProjName(){ var el=document.getElementById('projName');
+    if(el) el.textContent=(S.projName||'無題のプロジェクト'); }
+  function renameProject(){
+    var v=prompt('プロジェクト名（書き出しファイル名にも使われます）',S.projName||'');
+    if(v==null) return;   // キャンセル
+    v=String(v).replace(/^[ 　]+|[ 　]+$/g,'').slice(0,60);
+    if(v===S.projName) return;
+    S.projName=v; updProjName(); markDirty();
+    toast(v?('名前を変更しました：'+v):'名前を消しました（無題のプロジェクト）'); }
+  document.getElementById('projName').onclick=renameProject;
   document.getElementById('btnLoad').onclick=function(){ document.getElementById('file').click(); };
   document.getElementById('btnClearAll').onclick=function(){ if(!anyDrawing())return;
     clearAllSketch(); };
@@ -6976,6 +7009,8 @@
       S.hist=[];S.rhist=[]; render(); rebuildDrawer();
       flushAutosave(); } }   // v0.54: 消した状態を保存する（次の起動で戻ってこない）
   function applyProjectSketch(o){
+    // v0.90: プロジェクト名。無い（古い .json）場合は空＝「無題のプロジェクト」表示。
+    S.projName=(typeof o.name==='string')?o.name:''; updProjName();
     // v0.50: 色・名前・ACI も復元する。レイヤー表は添字が図形と結びついているので、
     // 保存時の並びをそのまま戻す（v0.49 以前の 4 番目=橙 のプロジェクトは橙のまま出る）。
     // 保存側に多い分（＋ で足した色）はレイヤー表に足す。
@@ -7230,10 +7265,18 @@
   function viewNow(){ return {cx:S.V.cx,cy:S.V.cy,scale:S.V.scale,rot:S.V.rot}; }
   function saveSketch(){
     try{ if(!anyDrawing()&&!S.rasters.length) return;
-      idbSet('autosave',{ts:Date.now(),proj:buildProject({noRasters:true}),view:viewNow()});
+      var tok=saveSeq;   // v0.90: この書き込みが「どの時点まで」を含むかの印
+      idbSet('autosave',{ts:Date.now(),proj:buildProject({noRasters:true}),view:viewNow()},
+        function(ok){ if(ok&&tok===saveSeq){ S.unsaved=false; updSaveBtn(); } });
     }catch(e){} }
   var dirtyT=0;
-  function markDirty(){ clearTimeout(dirtyT); dirtyT=setTimeout(saveSketch,2500); }
+  // v0.90: 保存状態の印。変更のたびに進み、その時点の印のまま書き込みが
+  // 完了したら「保存済み」（書き込み中にさらに編集されたら青のまま）。
+  var saveSeq=0;
+  function updSaveBtn(){ var b=document.getElementById('btnSaveTop');
+    if(b) b.classList.toggle('saved',!S.unsaved); }
+  function markDirty(){ S.unsaved=true; saveSeq++; updSaveBtn();
+    clearTimeout(dirtyT); dirtyT=setTimeout(saveSketch,2500); }
   // 1 枚を Blob にする。作り直しは重いので覚えておく（地図は読み込み後に変わらない）
   function rasterBlob(r,cb){
     if(r._blob!==undefined){ cb(r._blob); return; }
@@ -7370,7 +7413,7 @@
         // 読み直しの途中で afterAdd が fitView() を呼ぶので、表示位置は最後に当て直す
         if(hadView) applyView(o.view);
         rebuildDrawer(); document.getElementById('hint').classList.add('hidden');
-        render(); hideLoad(); mapsDirty();
+        render(); hideLoad(); mapsDirty(); markDirty();
         toast('元ファイルから復元しました（地図 '+S.rasters.length+' 枚・3D と断面も使えます）'); }
 
       // 控えが無い／印を持たない保存は、これまでどおり保存された PNG で背景を出す。
@@ -7379,7 +7422,7 @@
         var fin=function(n){
           rebuildDrawer(); document.getElementById('hint').classList.add('hidden');
           if(!hadView) fitView();
-          render(); hideLoad(); mapsDirty();
+          render(); hideLoad(); mapsDirty(); markDirty();
           toast('プロジェクトを読み込みました'+(metas.length?('（地図 '+n+' 枚）'):'（地図なし）'));
           if(missing&&missing.length) setTimeout(function(){
             cacheDiag(missing,function(msg){ toast(msg,true); }); },1200); };
@@ -7406,7 +7449,14 @@
     }catch(e){ hideLoad(); toast('復元に失敗しました: '+e.message,true); }
   }
 
-  function fname(extn){ var d=new Date(),p=function(n){return String(n).padStart(2,'0');}; return 'routemap_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+'.'+extn; }
+  // v0.90: 書き出しファイル名はプロジェクト名から作る（旧: routemap_ 固定）。
+  // 日本語はそのまま残し、ファイルシステムで問題になる文字だけ落とす。
+  // 日付・時刻は残す（同じ案件の版違いが並んでも区別できるように）。
+  function fname(extn){ var d=new Date(),p=function(n){return String(n).padStart(2,'0');};
+    var base=String(S.projName||'').replace(/[\/\\:*?"<>|]+/g,'_')
+      .replace(/[\u0000-\u001f]+/g,'').replace(/^[ 　._]+|[ 　._]+$/g,'');
+    if(!base) base='terrainsketch';
+    return base+'_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+'.'+extn; }
   function shareOrDownload(filename,text,mime){ shareOrDownloadBlob(filename,new Blob([text],{type:mime})); }
   function shareOrDownloadBlob(filename,blob){
     // PC: File System Access(保存先を選べる) → iPad等: 共有シート → 最後は<a download>
@@ -7424,6 +7474,8 @@
 
   // 起動
   symSizeLbl(); setTool('pen'); rebuildDrawer(); resize(); updateDemBadge();
+  // v0.90: 起動直後は「保存済み」から始める（復元された中身は端末から来たもの）。
+  S.projName=S.projName||''; S.unsaved=false; updProjName(); updSaveBtn();
   // v0.54: 前回の続きを**確認を挟まずに**戻す。別のアプリから戻るたびに
   // 白図を開き直す手間をなくすため。作図を始めていたら触らない（従来のカードを出す）。
   // 端末の空き容量が減ったときに消されにくくしておく（対応していない端末では何もしない）。
