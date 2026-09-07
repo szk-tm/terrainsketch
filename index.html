@@ -2414,7 +2414,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.92';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.94';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2449,6 +2449,22 @@
     _uid:1
   };
   function uid(){ return S._uid++; }
+  // v0.94: 取り込み・復元のあとに発番をやり直す。
+  //   _uid を保存していなかったため、復元した線（id 1,2,3…）に対して
+  //   起動後の新しい線が id 1 から振られ、**id が衝突**していた。
+  //   id で要素を引く仕組み（undo/redo の 'add'/'del'/'set'、線のタップ編集）が
+  //   別の要素を掴むので、必ずここを通してから使う。
+  //   dimg（寸法のまとめ id）も uid() 由来なので一緒に見る。
+  function reseedUid(){
+    var mx=0;
+    function look(arr){ if(!arr||!arr.length)return; var i,o;
+      for(i=0;i<arr.length;i++){ o=arr[i]; if(!o)continue;
+        if(typeof o.id==='number'&&isFinite(o.id)&&o.id>mx) mx=o.id;
+        if(typeof o.dimg==='number'&&isFinite(o.dimg)&&o.dimg>mx) mx=o.dimg; } }
+    look(S.strokes); look(S.texts); look(S.leaders); look(S.symbols);
+    look(S.photos); look(S.dims); look(S.rasters);
+    if(!(S._uid>mx)) S._uid=mx+1;
+    return S._uid; }
   // 新しい操作をしたら「やり直す」は無効になる（標準的な履歴の作法）
   function pushHist(h){ S.hist.push(h); if(S.hist.length>300)S.hist.shift();
     S.rhist.length=0; markDirty(); }
@@ -3836,7 +3852,12 @@
     return k; }
   function effTool(e){
     if(penActive()){
-      if(e.pointerType==='pen') return (S.tool==='pan')?'pen':S.tool;      // ペンは常に描ける
+      // v0.39: ペンは持ち替えなしで描ける。ただし v0.93 で ✥ を例外にした。
+      //   ✥（移動）は「見る・選ぶ・動かす」ための道具で、利用者が明示的に選んだとき
+      //   だけ作図から外れる。これが無いと ✥ で線をタップしても微小な線が描かれ、
+      //   その線を拾ってしまうため「線をタップして編集」が成立しなかった。
+      //   ✏️/📏 を選んでいる間は従来どおりペンで描ける。
+      if(e.pointerType==='pen') return (S.tool==='pan')?'pan':S.tool;
       if(e.pointerType==='touch') return (S.tool==='pen'||S.tool==='erase')?'pan':S.tool; } // 指はドラッグ=移動
     return S.tool; }
   function onPenDetected(){ var b=document.getElementById('btnPen');
@@ -4850,6 +4871,10 @@
     S.tool=t; for(var k in TOOLBTN) document.getElementById(TOOLBTN[k]).classList.toggle('on',k===t);
     updatePolyBar(); updateMeasBar();
     if(t!=='measure') closeProfile();
+    // v0.93: ✥ はペンでも描かない道具なので、選んだときに一度だけ知らせる
+    //   （ペンを検出しているときだけ。指運用では従来から描けないので出さない）
+    if(t==='pan'&&t!==S.tool0&&penActive()) toast('✥ 移動：ペンでも描きません。線をタップするとその線のスタイルを開きます');
+    S.tool0=t;
     document.getElementById('symBar').classList.toggle('show',t==='sym');
     document.getElementById('leaderBar').classList.toggle('show',t==='leader');
     updateGpsPlace(); render(); }
@@ -4893,7 +4918,7 @@
       d.setAttribute('title',pr[0]==='pen'?'ペンの線種':'折れ線の線種'); }); }
   // v0.92: 線をタップして編集しているときの相手（線の id）。null ならツールの既定を編集。
   var LSX=null;
-  function lsTarget(){ if(!LSX)return null;
+  function lsTarget(){ if(LSX==null)return null;   // v0.94: id が 0 の線も掴めるように
     for(var i=0;i<S.strokes.length;i++) if(S.strokes[i].id===LSX) return S.strokes[i];
     LSX=null; return null; }
   // 画面に出す値の出どころ（線を編集中ならその線、そうでなければツールの既定）
@@ -4913,9 +4938,12 @@
     [].forEach.call(document.querySelectorAll('.dsBtn'),function(b){
       b.classList.toggle('on',b.getAttribute('data-ds')===lineKind()); });
     tickLbls();
-    ['tickRow','tickRow2'].forEach(function(id){ var r=document.getElementById(id);
-      if(r) r.classList.toggle('dim',!S.tick); });
     var rf=lsRef();
+    // v0.94: 薄くするかは**編集対象**で決める（v0.91〜0.93 はツールの既定 S.tick を
+    // 見ていた）。#lineSheet .shRow.dim は pointer-events:none なので、
+    // ツールの既定が両髭線でないときに、線を編集していても髭の ± が押せなかった。
+    ['tickRow','tickRow2'].forEach(function(id){ var r=document.getElementById(id);
+      if(r) r.classList.toggle('dim',!rf.tick); });
     [].forEach.call(document.querySelectorAll('.dmBtn'),function(b){
       b.classList.toggle('on',parseFloat(b.getAttribute('data-dm'))===(rf.dashM||DASH_M)); });
     var row=document.getElementById('dashGapRow'); if(row)row.classList.toggle('dim',!rf.dash);
@@ -7128,6 +7156,7 @@
       photoLayerVis:PHOTOL.vis,
       // v0.62: 元ファイルの印。開くときにこれを頼りに端末内の控えを引き当てる
       rasters:rs, sources:opts.sources||srcRefs(), lwf:S.lwf,
+      _uid:S._uid,   // v0.94: id の発番。これが無いと取り込み後に id が衝突する
       lastH:S.lastH, symSize:S.symSize,   // ツール別の前回サイズも復元対象（毎回入れ直す手間を省く）
       dashOn:S.dash||undefined, dashM:S.dashM,   // 線スタイルの前回状態（v0.91 以前の形）
       ls:lsAll(),   // v0.92: ツール別の線種（✏️/📏 で独立）
@@ -7233,6 +7262,10 @@
     else { ['pen','line'].forEach(function(t){ var sl=lsSlot(t);
       sl.dash=!!o.dashOn; if(o.dashM>0) sl.dashM=o.dashM; }); }
     lsRestore(S.tool); LSX=null; syncLineStyleUI();
+    // v0.94: 取り込んだ要素と id が衝突しないよう、発番を最大値の次から続ける。
+    // 保存に _uid があればそれも尊重する（大きいほうを採る）。
+    if(o._uid>0) S._uid=o._uid;
+    reseedUid();
     S.hist=[]; S.rhist=[]; }
   function u8ToDataUrl(u8,mime){ var str='',CH=0x8000;
     for(var i=0;i<u8.length;i+=CH) str+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
