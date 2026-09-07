@@ -568,10 +568,13 @@
   #eraPrev{width:100%;height:132px;border-radius:10px;background:#f7f9fb;border:1px solid var(--line);}
   #dimSheet .csw{width:38px;height:38px;border-radius:9px;border:2px solid #46505c;padding:0;flex:0 0 auto;}
   #dimSheet .csw.on{border-color:var(--accent,#f5a524);box-shadow:0 0 0 2px rgba(245,165,36,.35);}
-  /* 点線中はツールボタン右下に ┅ バッジ（シートを開かなくても状態が分かる） */
+  /* v0.92: ツールボタン右下に「いまの線種」を常時表示する（─ 実線 / ┅ 点線 / ┼ 両髭線）。
+     v0.24〜v0.91 は点線のときだけ ┅ を出していたが、線種が 3 つになり、さらに
+     ✏️ と 📏 で別々の設定を持つようになったので、常に見えていないと分からない。 */
   .tbtn{position:relative;}
-  .tbtn .db{position:absolute;right:2px;bottom:0;font-size:11px;line-height:1;color:var(--accent2,#f5a524);display:none;}
-  .tbtn.dashOn .db{display:block;}
+  .tbtn .db{position:absolute;right:2px;bottom:1px;font-size:12px;line-height:1;
+    font-weight:700;color:var(--accent2,#f5a524);letter-spacing:-.5px;display:block;
+    text-shadow:0 1px 2px rgba(0,0,0,.55);pointer-events:none;}
   /* 断面パネル（v0.42）: 下から出す。地図を上に残してカーソル位置を地図側に出す。 */
   #profPanel{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;
     flex-direction:column;height:min(46vh,400px);
@@ -925,11 +928,12 @@
     <button class="ghost" id="restoreNo">破棄</button></div>
 </div>
 <div id="lineSheet"><div class="box">
-  <div class="shTitle">線のスタイル（✏️ペン・📏折れ線）</div>
+  <div class="shTitle" id="lineSheetTitle">線のスタイル</div>
   <div class="shRow"><span class="shLab">線種</span>
     <div class="szBox">
       <button class="szBtn dsBtn on" data-ds="0" type="button" style="min-width:76px;">── 実線</button>
       <button class="szBtn dsBtn" data-ds="1" type="button" style="min-width:76px;">┅ 点線</button>
+      <button class="szBtn dsBtn" data-ds="2" type="button" style="min-width:88px;">┼ 両髭線</button>
     </div></div>
   <div class="shRow" id="dashGapRow"><span class="shLab">点線の間隔</span>
     <div class="szBox">
@@ -937,13 +941,26 @@
       <button class="szBtn dmBtn on" data-dm="6" type="button" style="min-width:62px;">標準 6m</button>
       <button class="szBtn dmBtn" data-dm="12" type="button" style="min-width:60px;">粗 12m</button>
     </div></div>
-  <div class="shRow"><span class="shLab">線の太さ</span>
+  <div class="shRow" id="tickRow"><span class="shLab">髭の間隔</span>
+    <div class="szBox">
+      <button class="fb" id="tickPMinus" type="button">−</button>
+      <span class="lbl" id="tickPLbl" style="min-width:56px;text-align:center;color:var(--txt);">6 m</span>
+      <button class="fb" id="tickPPlus" type="button">＋</button>
+    </div></div>
+  <div class="shRow" id="tickRow2"><span class="shLab">髭の長さ</span>
+    <div class="szBox">
+      <button class="fb" id="tickLMinus" type="button">−</button>
+      <span class="lbl" id="tickLLbl" style="min-width:56px;text-align:center;color:var(--txt);">5 m</span>
+      <button class="fb" id="tickLPlus" type="button">＋</button>
+    </div></div>
+  <div class="shRow" id="lwRow"><span class="shLab">線の太さ</span>
     <div class="szBox">
       <button class="szBtn lwBtn" data-lw="1" type="button" style="min-width:56px;">細</button>
       <button class="szBtn lwBtn on" data-lw="1.7" type="button" style="min-width:56px;">標準</button>
       <button class="szBtn lwBtn" data-lw="2.5" type="button" style="min-width:56px;">太</button>
     </div></div>
-  <div class="muted2">点線の間隔は図上の実寸です。太さは画面表示のみで、DXF/GeoPDFの出力線幅には影響しません。</div>
+  <div class="muted2" id="lsHint">線種は ✏️ペンと📏折れ線で別々に覚えます（ツールボタン右下の ─ ┅ ┼ が今の線種です）。<b>描いた線の線種を変えるときは、✥ に切り替えてその線をタップ</b>してください。</div>
+  <div class="muted2">点線の間隔・髭の間隔と長さは、いずれも図上の実寸[m]です（ズームで変わりません）。髭は線の左右へ長さの半分ずつ出ます。太さは画面表示のみで、DXF/GeoPDFの出力線幅には影響しません。</div>
   <button class="ghost" id="lineSheetClose">閉じる</button>
 </div></div>
 
@@ -2397,7 +2414,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.90';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.92';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2408,6 +2425,13 @@
     symOrder:null,      // v0.50 記号パレットの並び（直前に使ったものが先頭）
     pal:[0,1,2,3,4],    // v0.50 画面のパレットに出すレイヤーの添字（上限 PAL_MAX）
     dash:false, dashM:6,          // 線種(点線ON/OFF)と点線の間隔[m]（細3/標準6/粗12）
+    tick:false, tickP:6, tickL:5, // v0.91: 両髭線（ON/OFF）と髭の間隔[m]・髭の全長[m]
+                                  //   髭は左右に tickL/2 ずつ出る。± で自由に変えられる。
+    // v0.92: 線種はツールごとに独立して覚える（✏️と📏で引き継がない）。
+    //   上の dash/tick… は「いま選んでいるツールの値」で、ツールを切り替える瞬間に
+    //   ここへ退避／ここから復帰する。線を作る側は従来どおり上の値だけを読む。
+    ls:{pen:{dash:false,dashM:6,tick:false,tickP:6,tickL:5},
+        line:{dash:false,dashM:6,tick:false,tickP:6,tickL:5}},
     lastH:{},                     // ツール別の前回サイズ(text/leader=文字高さ, sym/photo=大きさ)
     V:{cx:0,cy:0,scale:1,rot:0}, rotLock:false, zoomLock:false, anchorIn:true,
     snap:true,   // 既存の線への吸着（v0.40）。既定は入
@@ -2683,6 +2707,29 @@
   var NOTXT=false; // テクスチャ焼き込み時: 文字は3D旗揚げ側で表示するため描かない
   function lw(base){ return base*(S.lwf||1.7)*(EXPORTING?EXPORT_LW:1); }
   var DASH_M=6, HATCH_A=0.24;  // 既定の破線長[m]・ハッチ透明度（等高線が透ける濃さ）
+  var TICK_P=6, TICK_L=5;      // v0.91: 髭の既定の間隔[m]・全長[m]（左右に半分ずつ）
+  // v0.91: 両髭線の髭を作る唯一の場所。出力 4 経路（画面/DXF/GeoPDF注釈/焼き込み）が
+  // すべてここを呼ぶ（v0.86 の「4 経路目の取り残し」を構造で防ぐ）。
+  // 弧長 pitch ごとに、その場の進行方向に直交する線分を左右へ len/2 ずつ出す。
+  // 返すのは world 座標[m]の 2 点線分の配列。closed なら最終辺も回る。
+  function tickSegs(pts,pitch,len,closed){
+    var out=[]; if(!pts||pts.length<2) return out;
+    var P=pts; if(closed&&(P[0][0]!==P[P.length-1][0]||P[0][1]!==P[P.length-1][1])){
+      P=pts.slice(); P.push([pts[0][0],pts[0][1]]); }
+    var p=Math.abs(pitch)||TICK_P, h=(Math.abs(len)||TICK_L)/2;
+    if(p<0.05) p=0.05;
+    var next=p*0.5, i, acc=0;   // 端から半ピッチずらして始める（端に髭が重ならない）
+    for(i=0;i<P.length-1;i++){
+      var ax=P[i][0], ay=P[i][1], bx=P[i+1][0], by=P[i+1][1];
+      var dx=bx-ax, dy=by-ay, L=Math.sqrt(dx*dx+dy*dy);
+      if(L<1e-9) continue;
+      var ux=dx/L, uy=dy/L, nx=-uy, ny=ux;   // 進行方向と、その左向き法線
+      while(next<=acc+L){
+        var t=next-acc, cx=ax+ux*t, cy=ay+uy*t;
+        out.push([[cx-nx*h,cy-ny*h],[cx+nx*h,cy+ny*h]]);
+        next+=p; }
+      acc+=L; }
+    return out; }
   var demBadgeState=null;
   function updateDemBadge(){ var has=!!activeDem(), b=document.getElementById('btn3d'); if(!b||demBadgeState===has)return;
     demBadgeState=has; b.classList.toggle('has-dem',has); b.classList.toggle('no-dem',!has);
@@ -2734,9 +2781,18 @@
       ctx.globalAlpha=1; }
     S.strokes.forEach(function(st){ var L=LAYERS[st.layer]||LAYERS[0]; if(!SK||!L.vis)return;
       if(st.hatch&&st.closed) hatchFill(st.pts,L.color);
-      polyline(st.pts,L.color,lw(2.5)*(st.lwm||1),st.closed,st.dash,st.dashM); });
-    if(!EXPORTING&&S.cur) polyline(S.cur.pts,(LAYERS[S.cur.layer]||LAYERS[0]).color,lw(2.5),false,S.cur.dash,S.cur.dashM);
+      polyline(st.pts,L.color,lw(2.5)*(st.lwm||1),st.closed,st.dash,st.dashM);
+      // v0.91: 両髭線の髭。冠頂線と同じ色・太さで、髭は必ず実線。
+      if(st.tick) tickSegs(st.pts,st.tickP,st.tickL,st.closed).forEach(function(g){
+        polyline(g,L.color,lw(2.5)*(st.lwm||1),false,false,0); }); });
+    if(!EXPORTING&&S.cur){ var Lc=(LAYERS[S.cur.layer]||LAYERS[0]).color;
+      polyline(S.cur.pts,Lc,lw(2.5),false,S.cur.dash,S.cur.dashM);
+      // v0.91: 描いている最中も髭を出す（できあがりが見えるように）
+      if(S.cur.tick) tickSegs(S.cur.pts,S.cur.tickP,S.cur.tickL,false).forEach(function(g){
+        polyline(g,Lc,lw(2.5),false,false,0); }); }
     if(!EXPORTING&&S.poly){ var L0=LAYERS[S.poly.layer]||LAYERS[0]; polyline(S.poly.pts,L0.color,lw(2.5),false,S.poly.dash,S.poly.dashM);
+      if(S.poly.tick) tickSegs(S.poly.pts,S.poly.tickP,S.poly.tickL,false).forEach(function(g){
+        polyline(g,L0.color,lw(2.5),false,false,0); });
       S.poly.pts.forEach(function(pt){ var p=w2s(pt[0],pt[1]); ctx.fillStyle=L0.color; ctx.beginPath(); ctx.arc(p[0],p[1],4,0,7); ctx.fill(); }); }
     S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0]; if(SK&&L.vis) drawLeader(ld,L.color); });
     if(!EXPORTING&&S.leaderTip){ var p=w2s(S.leaderTip[0],S.leaderTip[1]); ctx.strokeStyle=accent(); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p[0],p[1],7,0,7); ctx.stroke();
@@ -3196,7 +3252,9 @@
   function measToStroke(){
     var P=measPts(); if(P.length<2){ toast('頂点が 2 つ以上必要です',true); return; }
     var st={id:uid(),layer:S.layer,pts:P.slice(),
-      dash:S.dash||undefined,dashM:S.dash?(S.dashM||DASH_M):undefined};
+      dash:S.dash||undefined,dashM:S.dash?(S.dashM||DASH_M):undefined,
+      tick:S.tick||undefined,tickP:S.tick?(S.tickP||TICK_P):undefined,
+      tickL:S.tick?(S.tickL||TICK_L):undefined};
     S.strokes.push(st); pushHist({op:'add',arr:'strokes',id:st.id});
     toast('測線を線にしました（'+LAYERS[S.layer].name+'）');
     render(); }
@@ -3815,7 +3873,8 @@
         // v0.40: 描き始めが既存の線の近くなら吸着する（v0.41: 設定に従う）
         if(snapAt('start')) w=snapPt(w[0],w[1]);
         // ts=採用済みサンプルの時刻（v0.39.7）。st には引き継がないので出力には出ない。
-        S.cur={layer:S.layer,pts:[[w[0],w[1]]],ts:0,dash:S.dash,dashM:S.dashM}; }
+        S.cur={layer:S.layer,pts:[[w[0],w[1]]],ts:0,dash:S.dash,dashM:S.dashM,
+          tick:S.tick,tickP:S.tickP,tickL:S.tickL}; }
       else if(T==='erase'){ eraseAt(e.clientX,e.clientY); }
       else { var w2=s2w(e.clientX,e.clientY); panAnchor={wx:w2[0],wy:w2[1]}; }
     } else if(n===2){ S.cur=null; ptrTool='pan'; startPinch(); }
@@ -3940,7 +3999,9 @@
           if(snapAt('end')){ var se=snapFind(sp[sp.length-1][0],sp[sp.length-1][1],null);
             if(se){ sp[sp.length-1]=[se.x,se.y]; snapShow(se); } } }
         if(sp.length>=2){ var st={id:uid(),layer:S.cur.layer,pts:sp,dash:S.cur.dash||undefined,
-            dashM:S.cur.dash?(S.cur.dashM||DASH_M):undefined};
+            dashM:S.cur.dash?(S.cur.dashM||DASH_M):undefined,
+            tick:S.cur.tick||undefined,tickP:S.cur.tick?(S.cur.tickP||TICK_P):undefined,
+            tickL:S.cur.tick?(S.cur.tickL||TICK_L):undefined};
           maybeClose(st);   // 起点と終点が近ければ閉じる（v0.24）
           S.strokes.push(st); pushHist({op:'add',arr:'strokes',id:st.id});
           res=rescued?'線にした(救済)':'線にした'; }
@@ -4078,7 +4139,8 @@
   function addPolyVertex(px,py){ var w=s2w(px,py);
     // v0.40: 折れ線の頂点も吸着させる（v0.41: 設定に従う）
     if(snapAt('vertex')) w=snapPt(w[0],w[1]);
-    if(!S.poly) S.poly={layer:S.layer,pts:[],dash:S.dash,dashM:S.dashM};
+    if(!S.poly) S.poly={layer:S.layer,pts:[],dash:S.dash,dashM:S.dashM,
+      tick:S.tick,tickP:S.tickP,tickL:S.tickL};
     S.poly.pts.push([w[0],w[1]]); updatePolyBar(); render(); }
   // 起点と終点が画面上で近ければ閉じた図形にする（GeoFOX の閉合判定と同じ考え方）。
   // 閉じたら終点を捨てて closed フラグで表現する（終点を起点に重ねると DXF で二重頂点になる）。
@@ -4151,7 +4213,9 @@
     if(Math.hypot(xx-xn,yx-yn)<CLOSE_PX*3)return;
     P.pop(); st.closed=true; toast('線を閉じました'); }
   function finishPoly(){ if(S.poly&&S.poly.pts.length>=2){ var st={id:uid(),layer:S.poly.layer,pts:S.poly.pts.slice(),dash:S.poly.dash||undefined,
-      dashM:S.poly.dash?(S.poly.dashM||DASH_M):undefined};
+      dashM:S.poly.dash?(S.poly.dashM||DASH_M):undefined,
+      tick:S.poly.tick||undefined,tickP:S.poly.tick?(S.poly.tickP||TICK_P):undefined,
+      tickL:S.poly.tick?(S.poly.tickL||TICK_L):undefined};
     maybeClose(st);
     S.strokes.push(st); pushHist({op:'add',arr:'strokes',id:st.id}); }
     S.poly=null; updatePolyBar(); render(); }
@@ -4161,7 +4225,9 @@
   function closePoly(){
     if(!S.poly||S.poly.pts.length<3){ toast('閉じるには頂点が 3 つ以上必要です',true); return; }
     var st={id:uid(),layer:S.poly.layer,pts:S.poly.pts.slice(),closed:true,
-      dash:S.poly.dash||undefined,dashM:S.poly.dash?(S.poly.dashM||DASH_M):undefined};
+      dash:S.poly.dash||undefined,dashM:S.poly.dash?(S.poly.dashM||DASH_M):undefined,
+      tick:S.poly.tick||undefined,tickP:S.poly.tick?(S.poly.tickP||TICK_P):undefined,
+      tickL:S.poly.tick?(S.poly.tickL||TICK_L):undefined};
     S.strokes.push(st); pushHist({op:'add',arr:'strokes',id:st.id});
     S.poly=null; updatePolyBar(); render(); toast('閉じた図形にしました'); }
   function cancelPoly(){ S.poly=null; updatePolyBar(); render(); }
@@ -4567,11 +4633,18 @@
         ?('（'+lbl+Math.round(r0.hd)+'°'+(r0.pitch!=null?(' 俯仰角 '+Math.round(r0.pitch)+'°'):'')+'）')
         :'（方位なし・手入力できます）')); }); }
   document.getElementById('photoInput').onchange=pickHandler;
+  // v0.92: ✥（移動）ツールで線をタップすると、その線のスタイルを開く。
+  // ✏️/📏 のタップは描画そのものなので奪えない（短いストロークが描けなくなる）。
+  function openLineSheetFor(i){ var st=S.strokes[i]; if(!st)return false;
+    if(st.dimg){ toast('寸法の線は個別に変えられません'); return true; }   // v0.45 の分解図形
+    LSX=st.id; openLineSheet(); return true; }
   function tapView(px,py){ var pi=hitPhoto(px,py); if(pi>=0){ openPhotoView(S.photos[pi]); return; }
     var ti=hitText(px,py,16); if(ti>=0&&S.texts[ti].photo){ var tt=S.texts[ti];
       document.getElementById('pvCap').innerHTML=esc((tt.t||'').split('\n')[0])+'<span class="meta">添付写真</span>';
       var im2=document.getElementById('pvImg'); im2.src=tt.photo; im2.style.display='block';
-      document.getElementById('photoView').style.display='flex'; } }
+      document.getElementById('photoView').style.display='flex'; return; }
+    // v0.92: 写真も注記も無ければ、線を拾ってスタイルを開く
+    var si=hitStroke(px,py,16); if(si>=0){ openLineSheetFor(si); } }
   function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function openPhotoView(ph){ var im=document.getElementById('pvImg');
     if(ph.img){ im.src=ph.img; im.style.display='block'; } else { im.removeAttribute('src'); im.style.display='none'; }
@@ -4688,6 +4761,7 @@
       for(k=0;k<runs.length;k++){
         var ns={id:uid(),layer:st.layer,pts:runs[k]};
         if(st.dash){ ns.dash=true; ns.dashM=st.dashM; }
+        if(st.tick){ ns.tick=true; ns.tickP=st.tickP; ns.tickL=st.tickL; }   // v0.91
         if(st.lwm)ns.lwm=st.lwm;                   // 太さは引き継ぐ（ハッチと closed は落ちる）
         S.strokes.splice(i,0,ns); items.push({op:'add',arr:'strokes',id:ns.id}); }
       changed=true; }
@@ -4768,6 +4842,9 @@
   // ---- ツールUI ----
   var TOOLBTN={pen:'tPen',line:'tLine',measure:'tMeas',text:'tText',leader:'tLeader',sym:'tSym',photo:'tPhoto',hatch:'tHatch',erase:'tErase',pan:'tPan'};
   function setTool(t){ if(S.tool==='line'&&t!=='line'&&S.poly) finishPoly();
+    // v0.92: 線種はツールごとに独立。切り替える瞬間に退避→復帰する。
+    // これで線を作る側（S.dash / S.tick… を読むだけ）は一切変えずに済む。
+    if(t!==S.tool){ lsStash(); lsRestore(t); }
     if(S.tool==='leader'&&t!=='leader'){ S.leaderTip=null; el('leaderInfo').textContent='① 指したい位置（矢印の先）をタップ'; }
     if(t!=='erase') S.eraseCur=null;            // v0.46: 有効範囲の円を残さない
     S.tool=t; for(var k in TOOLBTN) document.getElementById(TOOLBTN[k]).classList.toggle('on',k===t);
@@ -4779,36 +4856,110 @@
   // ✏️/📏 は「選択中にもう一度タップ」で線のスタイルシートを開く（手描きアプリの標準作法。
   // ツールを増やさず、線種・間隔・太さを1箇所に集約する）。
   Object.keys(TOOLBTN).forEach(function(tk){ document.getElementById(TOOLBTN[tk]).onclick=function(){
-    if(S.tool===tk&&(tk==='pen'||tk==='line')){ openLineSheet(); return; }
+    if(S.tool===tk&&(tk==='pen'||tk==='line')){ LSX=null; openLineSheet(); return; }
     // v0.44: 再タップは寸法の設定（✏️/📏 が線のスタイルを開くのと同じ作法）。
     // 断面図は 📈 ボタンと地図のダブルタップに残してある。
     if(S.tool===tk&&tk==='measure'){ openDimSheet(); return; }
     if(S.tool===tk&&tk==='erase'){ openEraSheet(); return; }   // v0.46
     setTool(tk); }; });
+  // v0.91: 線種は 実線(0)／点線(1)／両髭線(2) の 3 択。点線と両髭は排他。
+  // v0.92: 見るのは「編集対象」（線をタップ中ならその線／ふだんはツールの既定）。
+  function lineKind(){ var r=lsRef(); return r.tick?'2':(r.dash?'1':'0'); }
+  function mNum(v,d){ v=(v==null?d:v); return (v>=1?v:(+v).toFixed(1))+' m'; }
+  function tickLbls(){ var r=lsRef(),
+      a=document.getElementById('tickPLbl'), b=document.getElementById('tickLLbl');
+    if(a) a.textContent=mNum(r.tickP,TICK_P);
+    if(b) b.textContent=mNum(r.tickL,TICK_L); }
+  // v0.92: ツール別の線種。LSKEYS の 5 項目だけを退避／復帰する。
+  var LSKEYS=['dash','dashM','tick','tickP','tickL'];
+  // v0.92: 保存に入れる形（いまの値を退避してから丸ごと返す）
+  function lsAll(){ lsStash(); return {pen:lsSlot('pen'),line:lsSlot('line')}; }
+  function lsSlot(t){ if(t!=='pen'&&t!=='line') return null;
+    S.ls=S.ls||{}; if(!S.ls[t]) S.ls[t]={dash:false,dashM:DASH_M,tick:false,tickP:TICK_P,tickL:TICK_L};
+    return S.ls[t]; }
+  // いまの値を、いま選んでいるツールの引き出しへ写す（値を変えたら必ず呼ぶ）
+  function lsStash(){ var sl=lsSlot(S.tool); if(!sl)return;
+    for(var i=0;i<LSKEYS.length;i++) sl[LSKEYS[i]]=S[LSKEYS[i]]; }
+  // ツールの引き出しから、いまの値へ戻す（ツールを選んだときに呼ぶ）
+  function lsRestore(t){ var sl=lsSlot(t); if(!sl)return;
+    for(var i=0;i<LSKEYS.length;i++) S[LSKEYS[i]]=sl[LSKEYS[i]]; }
+  // 線種を表す 1 文字（シートのボタンと同じ字を使う）
+  function lsMark(o){ return (o&&o.tick)?'\u253c':((o&&o.dash)?'\u2505':'\u2500'); }
+  function lsBadges(){ lsStash();
+    [['pen','tPen'],['line','tLine']].forEach(function(pr){
+      var b=document.getElementById(pr[1]); if(!b)return;
+      var d=b.querySelector('.db'); if(!d)return;
+      var sl=lsSlot(pr[0]); d.textContent=lsMark(sl);
+      d.setAttribute('title',pr[0]==='pen'?'ペンの線種':'折れ線の線種'); }); }
+  // v0.92: 線をタップして編集しているときの相手（線の id）。null ならツールの既定を編集。
+  var LSX=null;
+  function lsTarget(){ if(!LSX)return null;
+    for(var i=0;i<S.strokes.length;i++) if(S.strokes[i].id===LSX) return S.strokes[i];
+    LSX=null; return null; }
+  // 画面に出す値の出どころ（線を編集中ならその線、そうでなければツールの既定）
+  function lsRef(){ return lsTarget()||S; }
+  // 値の書き込み。線を編集中なら履歴（op:'set'）に載せて undo/redo できるようにする。
+  function lsApply(kv){ var o=lsTarget(), k;
+    if(o){ var items=[];
+      for(k in kv){ if(o[k]===kv[k]) continue;
+        items.push({op:'set',arr:'strokes',id:o.id,key:k,from:o[k],to:kv[k]});
+        o[k]=kv[k]; }
+      if(items.length) pushHist({op:'batch',items:items});
+      return; }
+    for(k in kv) S[k]=kv[k];
+    if(S.poly){ for(k in kv) S.poly[k]=kv[k]; }   // 作図中の折れ線にも反映
+    lsStash(); lsBadges(); }
   function syncLineStyleUI(){
     [].forEach.call(document.querySelectorAll('.dsBtn'),function(b){
-      b.classList.toggle('on',(b.getAttribute('data-ds')==='1')===S.dash); });
+      b.classList.toggle('on',b.getAttribute('data-ds')===lineKind()); });
+    tickLbls();
+    ['tickRow','tickRow2'].forEach(function(id){ var r=document.getElementById(id);
+      if(r) r.classList.toggle('dim',!S.tick); });
+    var rf=lsRef();
     [].forEach.call(document.querySelectorAll('.dmBtn'),function(b){
-      b.classList.toggle('on',parseFloat(b.getAttribute('data-dm'))===S.dashM); });
-    var row=document.getElementById('dashGapRow'); if(row)row.classList.toggle('dim',!S.dash);
-    ['tPen','tLine'].forEach(function(id){ var b=document.getElementById(id);
-      if(b)b.classList.toggle('dashOn',S.dash); }); }
+      b.classList.toggle('on',parseFloat(b.getAttribute('data-dm'))===(rf.dashM||DASH_M)); });
+    var row=document.getElementById('dashGapRow'); if(row)row.classList.toggle('dim',!rf.dash);
+    // v0.92: 線をタップして編集しているときは、その線だと分かる見出しにする。
+    // 太さは線ごとの値ではなく画面表示の全体設定なので、そのときは触らせない。
+    var ed=!!lsTarget();
+    var ti=document.getElementById('lineSheetTitle');
+    if(ti) ti.textContent=ed?'この線のスタイル（タップした線だけを変えます）'
+      :('線のスタイル（'+(S.tool==='line'?'\ud83d\udccf 折れ線':'\u270f\ufe0f ペン')+'）');
+    var lwr=document.getElementById('lwRow'); if(lwr) lwr.classList.toggle('dim',ed);
+    var hnt=document.getElementById('lsHint'); if(hnt) hnt.classList.toggle('hidden',ed);
+    lsBadges(); }
   function openLineSheet(){ syncLineStyleUI(); syncLwBtns();
     document.getElementById('lineSheet').classList.add('open'); }
   document.getElementById('lineSheetClose').onclick=function(){
+    LSX=null;   // v0.92: 閉じたら「線を編集中」を解除する
     document.getElementById('lineSheet').classList.remove('open'); };
   // 背景タップでも閉じる（v0.28）。e.target が敷き紙そのもののときだけ閉じ、
   // .box 内のタップでは閉じない（スライダ操作中に指が外れても消えないように、
   // pointerdown ではなく click で判定する）。
   document.getElementById('lineSheet').addEventListener('click',function(e){
-    if(e.target===this) this.classList.remove('open'); });
+    if(e.target===this){ LSX=null; this.classList.remove('open'); } });
   [].forEach.call(document.querySelectorAll('.dsBtn'),function(b){ b.onclick=function(){
-    S.dash=(b.getAttribute('data-ds')==='1');
-    if(S.poly){ S.poly.dash=S.dash; S.poly.dashM=S.dashM; }   // 作図中の折れ線にも反映
-    syncLineStyleUI(); render(); }; });
+    var k=b.getAttribute('data-ds'), r=lsRef(), kv={dash:(k==='1'),tick:(k==='2')};
+    // 両髭線にするとき、その線がまだ髭の寸法を持っていなければ既定を入れる
+    if(k==='2'){ kv.tickP=(r.tickP>0?r.tickP:(S.tickP||TICK_P));
+      kv.tickL=(r.tickL>0?r.tickL:(S.tickL||TICK_L)); }
+    if(k==='1'&&!(r.dashM>0)) kv.dashM=(S.dashM||DASH_M);
+    lsApply(kv); syncLineStyleUI(); render(); }; });
+  // v0.91: 髭の間隔・長さは ± で自由に変える（0.5m〜200m）。
+  // 押すたびに 1 段（間隔は 1.5 倍、長さは 1.5 倍）動かし、作図中の折れ線にも即反映する。
+  function tickStep(which,up){
+    var r=lsRef();
+    var v=(which==='p')?(r.tickP||TICK_P):(r.tickL||TICK_L);
+    v=up?v*1.5:v/1.5;
+    v=Math.round(v*10)/10; if(v<0.5)v=0.5; if(v>200)v=200;
+    lsApply(which==='p'?{tickP:v}:{tickL:v});
+    tickLbls(); render(); }
+  document.getElementById('tickPMinus').onclick=function(){ tickStep('p',false); };
+  document.getElementById('tickPPlus').onclick=function(){ tickStep('p',true); };
+  document.getElementById('tickLMinus').onclick=function(){ tickStep('l',false); };
+  document.getElementById('tickLPlus').onclick=function(){ tickStep('l',true); };
   [].forEach.call(document.querySelectorAll('.dmBtn'),function(b){ b.onclick=function(){
-    S.dashM=parseFloat(b.getAttribute('data-dm'))||6;
-    if(S.poly)S.poly.dashM=S.dashM;
+    lsApply({dashM:parseFloat(b.getAttribute('data-dm'))||DASH_M});
     syncLineStyleUI(); render(); }; });
   var swEl=document.getElementById('swatches');
   // v0.50: パレットに出す色は S.pal（レイヤー表の添字の一覧）で決める。
@@ -5727,7 +5878,13 @@
         dxf+=wPoly(L.name,st.pts,true,st.dash?dashLt(st.dashM||DASH_M):null);
       } else {
         dxf+=wPoly(L.name,st.pts,!!st.closed,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm);
-      } });
+      }
+      // v0.91: 両髭線の髭は**個別のポリライン**として出す。複合線種（線種にシェイプを
+      // 埋める方式）は SHX の同梱が要るうえ SXF では分解されるため、受け手で崩れる。
+      // 実ジオメトリなら DXF/SXF どちらの基本要素でも確実に残る（調査報告 テーマ3）。
+      if(st.tick) tickSegs(st.pts,st.tickP,st.tickL,!!st.closed).forEach(function(g){
+        dxf+=wPoly(L.name,g,false,null,st.lwm); });
+    });
     // 複数行は MTEXT 1 個にまとめる（v0.30）。旧実装は行ごとに TEXT を出していたため
     // Rhino/AutoCAD で 2 行目が別オブジェクトとして読まれていた。
     // 1 行目のベースラインが t.y なので、ブロック上端は t.y+t.h（実測 ascent=1.0h）。
@@ -6024,9 +6181,9 @@
     // v0.46: extra に私有キーを足せるようにした（寸法・旗揚げの手がかり）。
     function ink(strokesW,col,dash,extra){ var pp=strokesW.map(flat), all=[]; pp.forEach(function(s){all=all.concat(s);});
       A.push(base('Ink',col,rectOf(all),dash)+(extra||'')+'/InkList['+pp.map(function(s){return '['+fl(s)+']';}).join('')+']>>'); }
-    function pline(ptsW,col,closed,subj,dash){ var pp=flat(ptsW);
+    function pline(ptsW,col,closed,subj,dash,extra){ var pp=flat(ptsW);
       A.push(base(closed?'Polygon':'PolyLine',col,rectOf(pp),dash)
-        +(subj?'/Subj('+subj+')':'')+'/Vertices['+fl(pp)+']>>'); }
+        +(subj?'/Subj('+subj+')':'')+(extra||'')+'/Vertices['+fl(pp)+']>>'); }
     function seg(aW,bW,col,arrow){ var pp=flat([aW,bW]);
       A.push(base('Line',col,rectOf(pp))+(arrow?'/IT/LineArrow':'')+'/L['+fl(pp)+']>>'); }
     function circ(cxW,cyW,rM,col){ var c=w2p(cxW,cyW), r=rM/mPerPt;
@@ -6082,7 +6239,11 @@
       return '/TSDimA['+fp(pa[0])+' '+fp(pa[1])+']/TSDimB['+fp(pb[0])+' '+fp(pb[1])+']'; }
     S.strokes.forEach(function(s){ col=hexRgb01((LAYERS[s.layer]||LAYERS[0]).color);
       var db=s.dash?dashBS(s.dashM):null;
-      if(s.closed) pline(s.pts,col,true,s.hatch?'hatch':null,db); else ink([s.pts],col,db,dimKeys(s)); });   // 閉じた線は Polygon 注釈・ハッチは /Subj(hatch)・点線は /BS の破線指定（v0.29.1）
+      // v0.91: 両髭線は「冠頂線 1 本＋髭の寸法」を渡す。髭のジオメトリは注釈に入れない
+      // （二重に取り込まれるのを防ぐ）。読み手は /TSTick[間隔 長さ] から髭を再生成する。
+      // 対応前の読み手でも、髭の無い線としてそのまま取り込める。
+      var tk=s.tick?('/TSTick['+fp(s.tickP||TICK_P,3)+' '+fp(s.tickL||TICK_L,3)+']'):'';
+      if(s.closed) pline(s.pts,col,true,s.hatch?'hatch':null,db,tk); else ink([s.pts],col,db,dimKeys(s)+tk); });   // 閉じた線は Polygon 注釈・ハッチは /Subj(hatch)・点線は /BS の破線指定（v0.29.1）
     S.texts.forEach(function(t){ if(!t.t)return; col=hexRgb01((LAYERS[t.layer]||LAYERS[0]).color);
       var rt=t.rot||0, ux=Math.cos(rt), uy=Math.sin(rt), vx=-uy, vy=ux;   // v0.44
       var tp=w2p(t.x,t.y);   // v0.73: タッチポイント（ページ座標・MediaBox 左下原点）→ Reader の Text In-View 基点
@@ -6371,7 +6532,10 @@
       ops+='ET\nQ\n'+post; }
     S.strokes.forEach(function(st){ var L=LAYERS[st.layer]||LAYERS[0]; if(st.pts.length<2)return;
       if(st.hatch&&st.closed) hatchOps(st.pts,L.color);
-      stroke(st.pts,L.color,!!st.closed,!!st.dash,st.dashM,st.lwm); });
+      stroke(st.pts,L.color,!!st.closed,!!st.dash,st.dashM,st.lwm);
+      // v0.91: 焼き込みは人が PDF で見る絵なので、髭も実際に描く
+      if(st.tick) tickSegs(st.pts,st.tickP,st.tickL,!!st.closed).forEach(function(g){
+        stroke(g,L.color,false,false,0,st.lwm); }); });
     S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0];
       var P=leaderPts(ld);
       // 焼き込みは人が PDF で見る絵。文字は我々が pdfLabelLines の幅で描くので、
@@ -6965,7 +7129,8 @@
       // v0.62: 元ファイルの印。開くときにこれを頼りに端末内の控えを引き当てる
       rasters:rs, sources:opts.sources||srcRefs(), lwf:S.lwf,
       lastH:S.lastH, symSize:S.symSize,   // ツール別の前回サイズも復元対象（毎回入れ直す手間を省く）
-      dashOn:S.dash||undefined, dashM:S.dashM,   // 線スタイルの前回状態
+      dashOn:S.dash||undefined, dashM:S.dashM,   // 線スタイルの前回状態（v0.91 以前の形）
+      ls:lsAll(),   // v0.92: ツール別の線種（✏️/📏 で独立）
       strokes:S.strokes, texts:S.texts, leaders:S.leaders, symbols:S.symbols, photos:phs,
       // v0.61: 表示位置（中心・縮尺・回転）。これが無いと開いたとき必ず全体表示になり、
       // 「保存当時の状態」に戻らなかった。無い古い保存は従来どおり全体表示に落ちる。
@@ -7058,7 +7223,16 @@
     if(o.lastH&&typeof o.lastH==='object') S.lastH=o.lastH;
     if(o.symSize>0){ S.symSize=o.symSize; symSizeLbl(); }
     if(o.dashM>0) S.dashM=o.dashM;
-    S.dash=!!o.dashOn; syncLineStyleUI();
+    S.dash=!!o.dashOn;
+    // v0.92: ツール別の線種。無い（v0.91 以前の）保存では、
+    // 旧来の 1 組（dashOn/dashM）を両方のツールの初期値として使う。
+    if(o.ls&&typeof o.ls==='object'){
+      ['pen','line'].forEach(function(t){ var src=o.ls[t]; if(!src)return;
+        var sl=lsSlot(t), i;
+        for(i=0;i<LSKEYS.length;i++) if(src[LSKEYS[i]]!=null) sl[LSKEYS[i]]=src[LSKEYS[i]]; }); }
+    else { ['pen','line'].forEach(function(t){ var sl=lsSlot(t);
+      sl.dash=!!o.dashOn; if(o.dashM>0) sl.dashM=o.dashM; }); }
+    lsRestore(S.tool); LSX=null; syncLineStyleUI();
     S.hist=[]; S.rhist=[]; }
   function u8ToDataUrl(u8,mime){ var str='',CH=0x8000;
     for(var i=0;i<u8.length;i+=CH) str+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
@@ -7476,6 +7650,7 @@
   symSizeLbl(); setTool('pen'); rebuildDrawer(); resize(); updateDemBadge();
   // v0.90: 起動直後は「保存済み」から始める（復元された中身は端末から来たもの）。
   S.projName=S.projName||''; S.unsaved=false; updProjName(); updSaveBtn();
+  lsRestore(S.tool); lsBadges();   // v0.92: 起動時に線種バッジを出す
   // v0.54: 前回の続きを**確認を挟まずに**戻す。別のアプリから戻るたびに
   // 白図を開き直す手間をなくすため。作図を始めていたら触らない（従来のカードを出す）。
   // 端末の空き容量が減ったときに消されにくくしておく（対応していない端末では何もしない）。
