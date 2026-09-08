@@ -692,6 +692,7 @@
   <span class="lbl" id="measInfo">地図をタップして測線を引きます</span>
   <button class="fb" id="measBack">↩ 1点戻す</button>
   <button class="fb primary" id="measProf">📈 断面図</button>
+  <button class="fb" id="measSlip">⛰ 地すべり</button>
   <button class="fb" id="measLine">📏 線にする</button>
   <button class="fb" id="measDim">📐 寸法にする</button>
   <button class="fb ghost" id="measClear">✕ 消す</button>
@@ -710,6 +711,13 @@
       <option value="5">×5</option>
       <option value="10">×10</option>
     </select>
+    <button class="fb" id="profSf">⛰ すべり面</button>
+    <span class="lbl">ピッチ</span>
+    <select id="slipPitch">
+      <option value="5">5 m</option>
+      <option value="10">10 m</option>
+      <option value="20" selected>20 m</option>
+    </select>
     <button class="fb" id="profPng">🖼 画像</button>
     <button class="fb" id="profCsv">📄 CSV</button>
     <button class="fb ghost" id="profClose">✕</button>
@@ -727,6 +735,7 @@
   <button class="fb" id="symPlus">＋</button>
 </div>
 <div class="fbar" id="leaderBar"><span class="lbl" id="leaderInfo">① 指したい位置（矢印の先）をタップ</span><button class="fb ghost" id="leaderCancel">✕ 中止</button></div>
+<div class="fbar" id="slipBar"><span class="lbl" id="slipInfo">① ブロック範囲線をタップ（閉じていない線も可）</span><button class="fb ghost" id="slipCancel">✕ 中止</button></div>
 
 <div id="edge"></div>
 <div id="drawerBack"></div>
@@ -2414,13 +2423,15 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.94';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.96';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
     hist:[], rhist:[],            // hist=元に戻す / rhist=やり直す
     cur:null, poly:null, leaderTip:null, markTip:null,
-    meas:null, profMark:null, profEx:0,   // v0.42 測線 / 断面のカーソル位置 / 高さ強調(0=自動)   // markTip=記入中の仮マーカー(v0.39.2)
+    meas:null, profMark:null, profEx:0,   // v0.42 測線 / 断面のカーソル位置 / 高さ強調(0=自動)
+    slip:null,   // v0.95 地すべり面モード。{blk:ブロック範囲線の id}。交点は持たない（都度算する）
+                 // v0.96 これに sf（すべり面の [距離 d, 標高 z] の列）と pitch（ペア色の標高ピッチ[m]）を入れる   // markTip=記入中の仮マーカー(v0.39.2)
     tool:'pen', layer:0, symId:'spring', symSize:10, lwf:1.7,
     symOrder:null,      // v0.50 記号パレットの並び（直前に使ったものが先頭）
     pal:[0,1,2,3,4],    // v0.50 画面のパレットに出すレイヤーの添字（上限 PAL_MAX）
@@ -2822,6 +2833,7 @@
     // 十字）と混ざらないよう、形と色を分けている。書き出しには出さない。
     // v0.42: 測線（距離計測・断面の測線）。書き出しには出さない。
     if(!EXPORTING&&S.meas&&S.meas.pts.length){ drawMeasure(); }
+    if(!EXPORTING&&S.slip) drawSlip();   // v0.95 ブロック範囲線と交点（書き出しには出さない）
     if(!EXPORTING&&S.profMark){ var pmp=w2s(S.profMark[0],S.profMark[1]);
       ctx.strokeStyle='#ffffff'; ctx.lineWidth=4;
       ctx.beginPath(); ctx.arc(pmp[0],pmp[1],8,0,7); ctx.stroke();
@@ -3203,6 +3215,36 @@
     if(opt.cap){ g.textAlign='left'; g.fillStyle=light?'#17202a':'#e6edf3';
       g.font='700 12px -apple-system,sans-serif';
       g.fillText(opt.cap,4,mT+ph+37); }
+    // v0.95: 地すべりブロック範囲線と主測線の交点。▼=頭部（標高が高い側）/
+    //   ▲=末端（低い側）/ ●=それ以外の交点。画面と PNG で同じ形になる。
+    //   カーソルの吹き出しより先に描いて、吹き出しを上に残す。
+    if(opt.slip&&opt.slip.length){
+      var sc=light?'#b3261e':'#ff6b6b', sk, sm, sx, sy, sup;
+      for(sk=0;sk<opt.slip.length;sk++){ sm=opt.slip[sk];
+        if(!sm||sm.z==null||sm.d==null) continue;
+        sx=X(sm.d); sy=Y(sm.z);
+        if(sx<mL-1||sx>mL+pw+1) continue;                  // 枠の外には出さない
+        g.strokeStyle=sc; g.fillStyle=sc; g.lineWidth=1.6;
+        if(sm.kind==='head'||sm.kind==='tail'){
+          sup=(sm.kind==='tail')?-1:1;                     // ▼頭部=上側に下向き / ▲末端=下側に上向き
+          g.beginPath();
+          g.moveTo(sx,sy-9*sup); g.lineTo(sx-6,sy-18*sup); g.lineTo(sx+6,sy-18*sup);
+          g.closePath(); g.fill();
+          g.beginPath(); g.moveTo(sx,sy); g.lineTo(sx,sy-9*sup); g.stroke(); }
+        g.beginPath(); g.arc(sx,sy,3.2,0,7); g.fill(); } }
+    // v0.96: すべり面（C）。断面の上に赤で引く。ピッチの倍数の標高との
+    //   交点には、平面の直交線と同じペア色の丸を打つ（D との対応が見える）。
+    if(opt.sf&&opt.sf.length>1){
+      var fx, fp, fi;
+      g.strokeStyle=light?'#b3261e':'#ff6b6b'; g.lineWidth=2; g.setLineDash([]);
+      g.beginPath();
+      for(fi=0;fi<opt.sf.length;fi++){ fp=opt.sf[fi];
+        fx=X(fp[0]); if(fi) g.lineTo(fx,Y(fp[1])); else g.moveTo(fx,Y(fp[1])); }
+      g.stroke();
+      if(opt.sfLv&&opt.sfLv.length){
+        for(fi=0;fi<opt.sfLv.length;fi++){ var lv=opt.sfLv[fi];
+          g.fillStyle=lv.col||(light?'#b3261e':'#ff6b6b');
+          g.beginPath(); g.arc(X(lv.d),Y(lv.z),4,0,7); g.fill(); } } }
     // カーソルと吹き出し（v0.43）。吹き出しは縦バーと断面線の交点から引く。
     if(opt.cur!=null&&SM[opt.cur]){ var c=SM[opt.cur], cx=X(c.d);
       var acc2=light?'#c2542f':'#f5a524';
@@ -3387,10 +3429,297 @@
       (P.length?('頂点 '+P.length+'・水平 '+fmtDist(L)):'地図をタップして測線を引きます');
     var pb=document.getElementById('measProf');
     if(pb) pb.disabled=(P.length<PROF_MIN_PTS); }
+  // ---- 地すべり面モード（v0.95: A ブロック範囲線 / B 主測線との交点）----
+  // 幾何はすべて平面直角座標[m]で行う（画面座標でやると縮尺で結果が変わる）。
+  // 線分 a1-a2 と b1-b2 の交点。平行（den=0）は交点なしとして扱う。
+  function segX(a1,a2,b1,b2){
+    var rx=a2[0]-a1[0], ry=a2[1]-a1[1], sx=b2[0]-b1[0], sy=b2[1]-b1[1];
+    var den=rx*sy-ry*sx; if(den===0) return null;
+    var t=((b1[0]-a1[0])*sy-(b1[1]-a1[1])*sx)/den;
+    var u=((b1[0]-a1[0])*ry-(b1[1]-a1[1])*rx)/den;
+    if(t<0||t>1||u<0||u>1) return null;
+    return {t:t,u:u,x:a1[0]+rx*t,y:a1[1]+ry*t}; }
+  // 折れ線の辺を配る。closed なら最終辺（終点→起点）も回す
+  // （終点を起点に重ねない作法なので、tickSegs と同じ手当てが必要）。
+  function polySegs(P,closed){ var out=[],i;
+    for(i=0;i<P.length-1;i++) out.push([P[i],P[i+1]]);
+    if(closed&&P.length>2) out.push([P[P.length-1],P[0]]);
+    return out; }
+  // 主測線（MP）× ブロック範囲線（BP）の交点。測線始点からの距離 d[m] を付け、
+  // d の順に返す。頂点で重なって 2 辺分拾った場合は 0.01m 以内を 1 点にまとめる。
+  // 標高は断面のサンプル（400 分割）に丸めず、交点そのもので DEM を引く。
+  function slipCross(MP,BP,closed){
+    var out=[],i,k,acc=0,segs,dem;
+    // 引数の見守りは辺を配るより先にする（polySegs に null を渡すと落ちる）
+    if(!MP||MP.length<2||!BP||BP.length<2) return out;
+    segs=polySegs(BP,closed); dem=activeDem();
+    for(i=0;i<MP.length-1;i++){
+      var a1=MP[i],a2=MP[i+1], sl=Math.hypot(a2[0]-a1[0],a2[1]-a1[1]), hits=[];
+      for(k=0;k<segs.length;k++){ var q=segX(a1,a2,segs[k][0],segs[k][1]); if(q) hits.push(q); }
+      hits.sort(function(p,r){ return p.t-r.t; });
+      for(k=0;k<hits.length;k++){ var h=hits[k], d=acc+sl*h.t;
+        if(out.length&&Math.abs(out[out.length-1].d-d)<0.01) continue;
+        var z=dem?sampleZ(dem,h.x,h.y):null;
+        out.push({d:d,x:h.x,y:h.y,z:(z==null||!isFinite(z))?null:z,kind:'x'}); }
+      acc+=sl; }
+    return out; }
+  // ▼頭部（標高が高い側）と ▲末端（低い側）を判定する。
+  // 交点が 1 つしかない（末端が開いている）ときは ▼頭部だけを立てる（§11.5）。
+  // 標高が取れない（DEM がない）ときは先頭を頭部扱いにする。
+  function slipMark(CR){
+    if(!CR||!CR.length) return CR||[];
+    var hi=-1,lo=-1,i;
+    for(i=0;i<CR.length;i++){ if(CR[i].z==null)continue;
+      if(hi<0||CR[i].z>CR[hi].z) hi=i;
+      if(lo<0||CR[i].z<CR[lo].z) lo=i; }
+    if(hi<0){ CR[0].kind='head'; return CR; }
+    CR[hi].kind='head';
+    if(lo>=0&&lo!==hi) CR[lo].kind='tail';
+    return CR; }
+  // 選んであるブロック範囲線。id で引く（添字で持つと消しゴムでずれる）。
+  var SLIP={sel:false,cr:[],open:false,draw:false};   // v0.96 draw=すべり面の描画中
+  function slipBlk(){ if(!S.slip||S.slip.blk==null) return null;
+    for(var i=0;i<S.strokes.length;i++) if(S.strokes[i].id===S.slip.blk) return S.strokes[i];
+    return null; }
+  // 交点を算し直す。辺数×測線区間数の総当たりだが、実対象の規模（数百頂点）では
+  // これで十分なので、描画のたびに算しなおして古い値を持たない（§5.3 の作法）。
+  function slipRecalc(){ var st=slipBlk(), MP=measPts();
+    SLIP.cr=[]; SLIP.open=false;
+    if(!st||!st.pts||st.pts.length<2||MP.length<2) return SLIP.cr;
+    SLIP.open=!st.closed;
+    SLIP.cr=slipMark(slipCross(MP,st.pts,!!st.closed));
+    return SLIP.cr; }
+  function slipCount(kind){ var n=0,i;
+    for(i=0;i<SLIP.cr.length;i++) if(SLIP.cr[i].kind===kind) n++;
+    return n; }
+  // 選択待ちにする。拾い方は ✥ と同じ（hitStroke）なので道具を ✥ に寄せる。
+  function slipArm(){
+    if(measPts().length<PROF_MIN_PTS){ toast('先に主測線を引いてください（頂点 2 つ以上）',true); return; }
+    SLIP.sel=true; setTool('pan');
+    var b=document.getElementById('slipBar'); if(b) b.classList.add('show');
+    toast('ブロック範囲線をタップしてください（閉じていない線も受け付けます）'); }
+  function slipCancel(){ SLIP.sel=false;
+    var b=document.getElementById('slipBar'); if(b) b.classList.remove('show'); }
+  // ブロック範囲線を決める。決めたら 📏 に戻して断面図を開き、▼▲ をその場で見せる。
+  function slipPick(i){ var st=S.strokes[i]; if(!st) return false;
+    S.slip={blk:st.id}; slipCancel(); markDirty();
+    var cr=slipRecalc(), msg='ブロック範囲線を選びました（'+(st.closed?'閉じた線':'開いた線')+'・交点 '+cr.length+' 点';
+    if(slipCount('tail')) msg+='・▼頭部 ▲末端）';
+    else if(slipCount('head')) msg+='・▼頭部のみ（末端は開いています））';
+    else msg+='・主測線と交わっていません）';
+    toast(msg,!cr.length);
+    setTool('measure');
+    if(activeDem()){ if(profOpen()) refreshProfile(true); else openProfile(); }
+    render(); return true; }
+  // ---- 地すべり面モード C・D（v0.96）------------------------------------
+  // 利用者の指定: 直交線は一律の長さでなく、**交点からブロック範囲線を跨いで
+  // 10m ほど伸びる**。交わらない側（開いた末端など）は見切りの長さに落とす。
+  var SLIP_PITCH=20;        // ペア色を振る標高ピッチ[m]の既定（5 / 10 / 20 から選ぶ）
+  var SLIP_PERP_EXT=10;     // ブロック範囲線の外へ伸びす長さ[m]
+  var SLIP_PERP_FB=20;      // 範囲線と交わらない側の長さ[m]（見切り）
+  var SLIP_SNAP_R=0.02;     // ▼▲ への吸着。測線長に対する割合
+  // ペア色。6 色を標高の段で循回する（図の F と同じ色を D にも使う）。
+  var PAIR_COLS=['#2aa7e0','#39b54a','#2f6fe0','#e0982a','#a24ad0','#d0392a'];
+  function slipPitch(){ var p=+(S.slip&&S.slip.pitch)||SLIP_PITCH; return (p>0)?p:SLIP_PITCH; }
+  function pairColor(z){ var p=slipPitch(), k=Math.round(z/p);
+    k=k%PAIR_COLS.length; if(k<0)k+=PAIR_COLS.length; return PAIR_COLS[k]; }
+  // 測線上の距離 d[m] の点と進行向き（単位ベクトル）。d は端で止める。
+  function measAt(MP,d){
+    if(!MP||MP.length<2) return null;
+    var i,acc=0,sl;
+    for(i=0;i<MP.length-1;i++){
+      sl=Math.hypot(MP[i+1][0]-MP[i][0],MP[i+1][1]-MP[i][1]);
+      if(sl<=0) continue;
+      if(d<=acc+sl||i===MP.length-2){
+        var t=(d-acc)/sl; if(t<0)t=0; if(t>1)t=1;
+        return {x:MP[i][0]+(MP[i+1][0]-MP[i][0])*t,
+                y:MP[i][1]+(MP[i+1][1]-MP[i][1])*t,
+                ux:(MP[i+1][0]-MP[i][0])/sl, uy:(MP[i+1][1]-MP[i][1])/sl}; }
+      acc+=sl; }
+    return null; }
+  // 半直線 P + t*Dir（t>0）と折れ線の最も近い交点までの距離。無ければ null。
+  function rayPoly(px,py,dx,dy,BP,closed){
+    var segs=polySegs(BP,closed), best=null, k;
+    for(k=0;k<segs.length;k++){
+      var a=segs[k][0], b=segs[k][1];
+      var sx=b[0]-a[0], sy=b[1]-a[1];
+      var den=dx*sy-dy*sx; if(den===0) continue;
+      var t=((a[0]-px)*sy-(a[1]-py)*sx)/den;      // 半直線側の媒介変数（=距離／|Dir|）
+      var u=((a[0]-px)*dy-(a[1]-py)*dx)/den;      // 辺側の 0〜1
+      if(t<=0||u<0||u>1) continue;
+      if(best===null||t<best) best=t; }
+    return best; }
+  // 直交線 1 本。主測線に直交し、両側とも範囲線を跨いで ext[m] 伸びる。
+  // 交わらない側は fb[m]。戻るのは world 座標の 2 点と、側ごとの実長。
+  function slipPerp(MP,d,BP,closed,ext,fb){
+    var m=measAt(MP,d); if(!m) return null;
+    ext=(ext==null)?SLIP_PERP_EXT:ext; fb=(fb==null)?SLIP_PERP_FB:fb;
+    var nx=-m.uy, ny=m.ux, out=[], sgn, i;
+    for(i=0;i<2;i++){
+      sgn=i?-1:1;
+      var hit=BP?rayPoly(m.x,m.y,nx*sgn,ny*sgn,BP,closed):null;
+      out.push({len:(hit===null)?fb:(hit+ext),hit:(hit!==null)});
+    }
+    return {x:m.x,y:m.y,nx:nx,ny:ny,
+      a:[m.x+nx*out[0].len,m.y+ny*out[0].len],
+      b:[m.x-nx*out[1].len,m.y-ny*out[1].len],
+      sideA:out[0],sideB:out[1]}; }
+  // すべり面（[d,z] の列）と標高 z の交点の d。水平な区間は中心を 1 点とする。
+  // 水平な区間がその標高に乗っているときは、区間の中心を 1 点の代表点とし、
+  // その区間の端での交わり（隣の辺の t=0 or 1）は二重に出さない。
+  // 先に水平区間を全部拾ってから交点を見る（順序に依らないように）。
+  function sfCrossD(SF,z){
+    var out=[],rng=[],i,k; if(!SF||SF.length<2) return out;
+    for(i=0;i<SF.length-1;i++){
+      if(SF[i][1]===SF[i+1][1]&&SF[i][1]===z){
+        var a0=Math.min(SF[i][0],SF[i+1][0]), a1=Math.max(SF[i][0],SF[i+1][0]);
+        rng.push([a0,a1]); out.push((a0+a1)/2); } }
+    for(i=0;i<SF.length-1;i++){
+      var d0=SF[i][0],z0=SF[i][1],d1=SF[i+1][0],z1=SF[i+1][1];
+      if(z0===z1) continue;                          // 水平区間は上で処理済み
+      if((z0-z)*(z1-z)>0) continue;                  // 同じ側なら交らない
+      var t=(z-z0)/(z1-z0); if(t<0||t>1) continue;
+      var d=d0+(d1-d0)*t, dup=false;
+      for(k=0;k<rng.length;k++) if(d>=rng[k][0]-1e-9&&d<=rng[k][1]+1e-9) dup=true;
+      if(dup) continue;
+      for(k=0;k<out.length;k++) if(Math.abs(out[k]-d)<0.01) dup=true;
+      if(dup) continue;
+      out.push(d); }
+    out.sort(function(p,q){ return p-q; });
+    return out; }
+  // ピッチの倍数の標高を列挙する（すべり面の標高幅の中だけ）。
+  function slipLevels(SF,pitch){
+    var out=[],i; if(!SF||SF.length<2) return out;
+    var lo=1e30,hi=-1e30;
+    for(i=0;i<SF.length;i++){ var z=SF[i][1];
+      if(z<lo)lo=z; if(z>hi)hi=z; }
+    if(!(hi>lo)) return out;
+    pitch=(pitch>0)?pitch:SLIP_PITCH;
+    var z0=Math.ceil(lo/pitch)*pitch;
+    for(i=0;i<4000;i++){ var zz=z0+pitch*i; if(zz>hi+1e-9) break; out.push(+zz.toFixed(6)); }
+    return out; }
+  // 平面展開（D）。標高ごとに、主測線上の点と直交線を作る。
+  function slipPlan(){
+    var out=[], st=slipBlk(), MP=measPts(), SF=(S.slip&&S.slip.sf)||null;
+    if(!SF||SF.length<2||MP.length<2) return out;
+    var BP=(st&&st.pts&&st.pts.length>1)?st.pts:null, cl=!!(st&&st.closed);
+    var lv=slipLevels(SF,slipPitch()), i, k;
+    for(i=0;i<lv.length;i++){
+      var ds=sfCrossD(SF,lv[i]);
+      for(k=0;k<ds.length;k++){
+        var g=slipPerp(MP,ds[k],BP,cl,SLIP_PERP_EXT,SLIP_PERP_FB);
+        if(!g) continue;
+        out.push({z:lv[i],d:ds[k],x:g.x,y:g.y,a:g.a,b:g.b,
+          col:pairColor(lv[i]),hitA:g.sideA.hit,hitB:g.sideB.hit}); } }
+    return out; }
+  // ---- すべり面のスケッチ（C）-----------------------------------------
+  // 断面図の画面座標 → （距離 d, 標高 z）。drawProfile が返した枠の値を使う。
+  function prof2dz(cx,cy){
+    var c=profCanvas(), gm=PROF.geom, st=PROF.st;
+    if(!c||!gm||!st||!st.len) return null;
+    var r=c.getBoundingClientRect();
+    var px=cx-r.left, py=cy-r.top;
+    var d=(px-gm.mL)/Math.max(1,gm.pw)*st.len;
+    var z=gm.lo+(gm.mT+gm.ph-py)/Math.max(1,gm.ph)*(gm.hi-gm.lo);
+    if(d<0)d=0; if(d>st.len)d=st.len;
+    return {d:d,z:z}; }
+  // その距離の地表標高（断面のサンプルから線形補間）
+  function profZAt(d){
+    var SM=PROF.SM; if(!SM||SM.length<2) return null;
+    var L=SM[SM.length-1].d; if(!(L>0)) return null;
+    var t=d/L*(SM.length-1), i=Math.floor(t);
+    if(i<0)i=0; if(i>SM.length-2)i=SM.length-2;
+    var a=SM[i],b=SM[i+1];
+    if(a.z==null||b.z==null) return (a.z!=null?a.z:b.z);
+    var u=(b.d>a.d)?((d-a.d)/(b.d-a.d)):0;
+    return a.z+(b.z-a.z)*u; }
+  // スケッチの 1 点を受ける。地表線より上は不可（地表に押さえる）。
+  // ▼▲（交点）の近くはその点に吸着する。
+  function slipSfPoint(cx,cy){
+    var q=prof2dz(cx,cy); if(!q) return null;
+    var st=PROF.st, snapR=(st&&st.len)?st.len*SLIP_SNAP_R:0, i;
+    for(i=0;i<SLIP.cr.length;i++){ var m=SLIP.cr[i];
+      if(m.z==null) continue;
+      if(Math.abs(m.d-q.d)<=snapR){ return {d:m.d,z:m.z,snap:true}; } }
+    var sz=profZAt(q.d);
+    if(sz!=null&&q.z>sz) q.z=sz;                  // 地表より上には描けない
+    return {d:q.d,z:q.z,snap:false}; }
+  function slipSfArr(){ if(!S.slip) return null;
+    if(!S.slip.sf) S.slip.sf=[]; return S.slip.sf; }
+  function slipSfAdd(cx,cy){
+    var a=slipSfArr(); if(!a) return false;
+    var p=slipSfPoint(cx,cy); if(!p) return false;
+    // 近すぎる点は間引く（ペンの微小な掺れを頂点にしない）
+    if(a.length){ var q=a[a.length-1], st=PROF.st;
+      var mind=(st&&st.len)?st.len*0.002:0;
+      if(Math.abs(q[0]-p.d)<mind&&Math.abs(q[1]-p.z)<0.05) return false; }
+    a.push([p.d,p.z]); markDirty(); return true; }
+  function slipSfDone(){
+    var a=slipSfArr();
+    if(a&&a.length){ a.sort(function(p,q){ return p[0]-q[0]; }); }   // d の昇順にする
+    SLIP.draw=false; syncSfBtn(); refreshProfile(true); render(); }
+  function slipSfClear(){ if(S.slip){ S.slip.sf=[]; markDirty(); }
+    refreshProfile(true); render(); }
+  function slipSfToggle(){
+    if(!S.slip||S.slip.blk==null){ toast('先に ⛰ でブロック範囲線を選んでください',true); return; }
+    if(SLIP.draw){ slipSfDone(); return; }
+    SLIP.draw=true; syncSfBtn();
+    toast('断面図の上をなぞってすべり面を描きます（▼▲ に吸着・地表より上には描けません）'); }
+  function syncSfBtn(){ var b=document.getElementById('profSf');
+    if(b){ b.classList.toggle('primary',!!SLIP.draw);
+      b.textContent=SLIP.draw?'✓ 描き終わり':'⛰ すべり面'; } }
+  // 選択待ちのタップ。拾い方（hitStroke・16px）は v0.92 の線のタップ編集と同じ。
+  function slipTap(px,py){ var bi=hitStroke(px,py,16);
+    if(bi>=0){ slipPick(bi); return true; }
+    toast('線の上をタップしてください（当たり判定 16px）',true); return false; }
+  function slipClear(){ S.slip=null; SLIP.cr=[]; SLIP.open=false; markDirty();
+    slipCancel(); refreshProfile(); render(); }
+  // 地図への重ね描き。書き出し（DXF / GeoPDF）には一切出さない（測線と同じ扱い）。
+  function drawSlip(){
+    var st=slipBlk(); if(!st||!st.pts||!st.pts.length) return;
+    slipRecalc(); PLAN=slipPlan();
+    var sp=st.pts.map(function(q){ return w2s(q[0],q[1]); }), i;
+    ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round'; ctx.setLineDash([]);
+    ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=lw(5.4);
+    ctx.beginPath();
+    for(i=0;i<sp.length;i++){ i?ctx.lineTo(sp[i][0],sp[i][1]):ctx.moveTo(sp[i][0],sp[i][1]); }
+    if(st.closed) ctx.closePath();
+    ctx.stroke();
+    ctx.strokeStyle='#e5484d'; ctx.lineWidth=lw(2.6); ctx.stroke();
+    // 開いている線は、両端を結んだ「仮の閉じ線」を薄い破線で見せる（§11.5 ④）。
+    // v0.95 では表示だけで、内外判定（E）にはまだ使っていない。
+    if(!st.closed&&sp.length>2){
+      ctx.setLineDash([lw(6),lw(5)]);
+      ctx.strokeStyle='rgba(229,72,77,.45)'; ctx.lineWidth=lw(1.8);
+      ctx.beginPath(); ctx.moveTo(sp[0][0],sp[0][1]);
+      ctx.lineTo(sp[sp.length-1][0],sp[sp.length-1][1]); ctx.stroke();
+      ctx.setLineDash([]); }
+    // v0.96: 平面展開（D）。直交線は**一律で破線**、長さは範囲線を跨いで
+    //   SLIP_PERP_EXT[m]（利用者の指定）。色は標高ごとのペア色で、
+    //   同じ色の地形コンター（F・後半）と対応する。
+    for(i=0;i<PLAN.length;i++){ var pl=PLAN[i];
+      var pa=w2s(pl.a[0],pl.a[1]), pb=w2s(pl.b[0],pl.b[1]), pc=w2s(pl.x,pl.y);
+      ctx.setLineDash([lw(7),lw(5)]);
+      ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=lw(3.6);
+      ctx.beginPath(); ctx.moveTo(pa[0],pa[1]); ctx.lineTo(pb[0],pb[1]); ctx.stroke();
+      ctx.strokeStyle=pl.col; ctx.lineWidth=lw(1.8);
+      ctx.beginPath(); ctx.moveTo(pa[0],pa[1]); ctx.lineTo(pb[0],pb[1]); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath(); ctx.arc(pc[0],pc[1],4.5,0,7); ctx.fill();
+      ctx.fillStyle=pl.col;
+      ctx.beginPath(); ctx.arc(pc[0],pc[1],3,0,7); ctx.fill(); }
+    for(i=0;i<SLIP.cr.length;i++){ var q2=SLIP.cr[i], p2=w2s(q2.x,q2.y);
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath(); ctx.arc(p2[0],p2[1],6,0,7); ctx.fill();
+      ctx.fillStyle=(q2.kind==='head'||q2.kind==='tail')?'#e5484d':'#17202a';
+      ctx.beginPath(); ctx.arc(p2[0],p2[1],4,0,7); ctx.fill(); }
+    ctx.restore(); }
   // ---- 断面パネル（v0.42）----------------------------------------------------
   // 下から出る形にしてある。地図が上に残るので、断面のカーソル位置を地図側に
   // 同時に出せる（スーパー地形と同じ読み方）。
   var PROF={SM:[],st:null,cur:null,geom:null};
+  var PLAN=[];   // v0.96 平面展開の結果（すべり面・測線・範囲線から毎回作る・保存しない）
   function profOpen(){ var p=document.getElementById('profPanel');
     return !!(p&&p.classList.contains('open')); }
   function profCanvas(){ return document.getElementById('cvProf'); }
@@ -3412,6 +3741,8 @@
     if(P.length<PROF_MIN_PTS){ PROF.SM=[]; PROF.st={n:0,len:0,surf:0}; }
     else { PROF.SM=profileSamples(P,PROF_N); PROF.st=profStats(PROF.SM); }
     if(PROF.cur!=null&&PROF.cur>=PROF.SM.length) PROF.cur=null;
+    slipRecalc();   // v0.95 測線が変わったら交点も変わる
+    PLAN=slipPlan();   // v0.96 平面展開（断面の丸と地図の直交線で兼用）
     paintProfile(); }
   function paintProfile(){
     var c=profCanvas(); if(!c||!profOpen())return;
@@ -3422,7 +3753,8 @@
       c.width=Math.round(W*dpr); c.height=Math.round(H*dpr); }
     var g=c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
     PROF.geom=drawProfile(g,W,H,PROF.SM,PROF.st||{n:0,len:0},
-      {ex:+S.profEx||0,cur:PROF.cur,light:false});
+      {ex:+S.profEx||0,cur:PROF.cur,light:false,slip:SLIP.cr,
+       sf:(S.slip&&S.slip.sf)||null,sfLv:PLAN});
     profText(); }
   function profText(){
     var st=PROF.st||{n:0}, e=document.getElementById('profStat');
@@ -3460,10 +3792,18 @@
     var drag=false;
     c.addEventListener('pointerdown',function(e){ drag=true;
       try{ c.setPointerCapture&&c.setPointerCapture(e.pointerId); }catch(e2){}
-      profPick(e.clientX); e.preventDefault(); e.stopPropagation(); },{passive:false});
+      // v0.96: すべり面の描画中は、カーソルでなく頂点を置く
+      if(SLIP.draw){ if(slipSfAdd(e.clientX,e.clientY)) paintProfile(); }
+      else profPick(e.clientX);
+      e.preventDefault(); e.stopPropagation(); },{passive:false});
     c.addEventListener('pointermove',function(e){ if(!drag)return;
-      profPick(e.clientX); e.preventDefault(); e.stopPropagation(); },{passive:false});
-    function up(e){ drag=false; e.stopPropagation(); }
+      if(SLIP.draw){ if(slipSfAdd(e.clientX,e.clientY)) paintProfile(); }
+      else profPick(e.clientX);
+      e.preventDefault(); e.stopPropagation(); },{passive:false});
+    function up(e){ drag=false;
+      if(SLIP.draw){ var a=slipSfArr(); if(a&&a.length){ a.sort(function(p,q){ return p[0]-q[0]; }); }
+        PLAN=slipPlan(); paintProfile(); render(); }
+      e.stopPropagation(); }
     c.addEventListener('pointerup',up,{passive:true});
     c.addEventListener('pointercancel',up,{passive:true});
   })();
@@ -3480,7 +3820,8 @@
       +'／標高 '+fmtZ(st.zmin)+'〜'+fmtZ(st.zmax)+'／起伏 '+fmtZ(st.relief)
       +(PROF.geom&&PROF.geom.ex?('／高さ強調 ×'+PROF.geom.ex.toFixed(1)):'');
     drawProfile(g,W/2,H/2,PROF.SM,PROF.st,
-      {ex:+S.profEx||0,cur:PROF.cur,light:true,cap:cap});
+      {ex:+S.profEx||0,cur:PROF.cur,light:true,cap:cap,slip:SLIP.cr,
+       sf:(S.slip&&S.slip.sf)||null,sfLv:PLAN});
     if(c.toBlob) c.toBlob(function(b){ shareOrDownloadBlob(fname('png'),b); });
     else shareOrDownload(fname('png'),'','image/png'); }
   // 断面の数値（CSV）。photos.csv と同じ作法（UTF-8 BOM 付き・CRLF）。
@@ -4086,7 +4427,7 @@
     else if(S.tool==='leader') tapLeader(px,py);
     else if(S.tool==='sym') tapSym(px,py);
     else if(S.tool==='photo') tapPhoto(px,py);
-    else if(S.tool==='pan') tapView(px,py);
+    else if(S.tool==='pan'){ if(SLIP.sel) slipTap(px,py); else tapView(px,py); }
     else if(S.tool==='erase') eraseAt(px,py);
   }
   // 回転を (px,py) を軸にして適用する
@@ -5136,6 +5477,15 @@
   // v0.42: 計測バーと断面パネル
   document.getElementById('measBack').onclick=measBack;
   document.getElementById('measProf').onclick=openProfile;
+  // v0.95: ⛰ は「選択待ちにする」。すでに選んでいるときの再タップは選び直し。
+  document.getElementById('measSlip').onclick=function(){ slipArm(); };
+  // v0.96: すべり面の描画の入切と、ペア色の標高ピッチ
+  document.getElementById('profSf').onclick=function(){ slipSfToggle(); };
+  document.getElementById('profSf').ondblclick=function(){ slipSfClear(); };
+  document.getElementById('slipPitch').onchange=function(){
+    if(S.slip){ S.slip.pitch=+this.value||SLIP_PITCH; markDirty(); }
+    PLAN=slipPlan(); paintProfile(); render(); };
+  document.getElementById('slipCancel').onclick=function(){ slipCancel(); };
   document.getElementById('measLine').onclick=measToStroke;
   document.getElementById('measDim').onclick=measToDim;   // v0.43
   // ---- 消しゴムの設定シート（v0.46）--------------------------------------------
@@ -7148,6 +7498,9 @@
       snapPx:snapRadius(), snapStart:S.snapStart!==false, snapEnd:S.snapEnd!==false,
       snapVertex:S.snapVertex!==false, snapEndOnly:S.snapEndOnly===true,
       meas:(S.meas&&S.meas.pts.length)?S.meas.pts:undefined, profEx:S.profEx||0,   // v0.42
+      slip:(S.slip&&S.slip.blk!=null)?{blk:S.slip.blk,
+        sf:(S.slip.sf&&S.slip.sf.length)?S.slip.sf:undefined,   // v0.96 すべり面（[d,z] の列）
+        pitch:S.slip.pitch||undefined}:undefined,               // v0.96 ペア色の標高ピッチ
       dimH:+S.dimH||0, dimArrow:dimArrowR(), dimLwm:dimLwmR(), dimOff:dimOffR(),
       dimLayer:dimLayerR(), dimPara:S.dimPara===true,   // v0.44
       eraseR:eraseRad(), erasePart:S.erasePart===true,   // v0.46
@@ -7231,6 +7584,13 @@
     if(o.snapVertex!=null) S.snapVertex=(o.snapVertex!==false);
     if(o.snapEndOnly!=null) S.snapEndOnly=(o.snapEndOnly===true);
     S.meas=(o.meas&&o.meas.length)?{pts:o.meas}:null;                      // v0.42
+    S.slip=(o.slip&&o.slip.blk!=null)?{blk:o.slip.blk,                      // v0.95
+      sf:(o.slip.sf&&o.slip.sf.length)?o.slip.sf:[],                        // v0.96
+      pitch:+o.slip.pitch||SLIP_PITCH}:null;
+    SLIP.draw=false; PLAN=[];
+    var spx=document.getElementById('slipPitch');
+    if(spx) spx.value=String((S.slip&&S.slip.pitch)||SLIP_PITCH);
+    syncSfBtn();
     S.profEx=+o.profEx||0; S.profMark=null;
     if(o.dimH!=null) S.dimH=+o.dimH||0;                                   // v0.44
     if(o.dimArrow>0) S.dimArrow=+o.dimArrow;
