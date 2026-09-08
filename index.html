@@ -459,8 +459,11 @@
 
   #load{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;background:rgba(14,18,22,.7);backdrop-filter:blur(4px);}
   #load .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 26px;font-size:14px;}
-  #toast{position:fixed;left:50%;bottom:calc(60px + var(--safe-b));transform:translateX(-50%);z-index:75;
-    background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-size:13px;max-width:88vw;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none;}
+  /* v0.99: 下部メニューと重ならないよう画面中央へ。文字も大きく、最前面（z 95）に。 */
+  #toast{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);z-index:95;
+    background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 20px;
+    font-size:17px;line-height:1.55;font-weight:600;max-width:86vw;text-align:center;
+    box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;transition:opacity .2s;pointer-events:none;}
   #toast.show{opacity:1;} #toast.err{border-color:var(--bad);}
   /* 3D地形ビュー */
   #view3d{position:fixed;inset:0;z-index:85;background:#0a0d10;display:none;}
@@ -2444,7 +2447,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.98';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.99';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -4221,7 +4224,11 @@
 
   function showLoad(m){ document.getElementById('loadMsg').textContent=m||'読み込み中…'; document.getElementById('load').style.display='flex'; }
   function hideLoad(){ document.getElementById('load').style.display='none'; }
-  var toastT; function toast(m,err){ var t=document.getElementById('toast'); t.textContent=m; t.className='show'+(err?' err':''); clearTimeout(toastT); toastT=setTimeout(function(){t.className='';},err?4200:2600); }
+  // v0.99: 表示時間は文の長さに応じて伸ばす（読める秒数に）。3〜9 秒、警告は +1.5 秒。
+  function toastMs(m,err){ var n=(m||'').length;
+    var ms=3000+n*55; if(err) ms+=1500;
+    if(ms<3000) ms=3000; if(ms>9000) ms=9000; return ms; }
+  var toastT; function toast(m,err){ var t=document.getElementById('toast'); t.textContent=m; t.className='show'+(err?' err':''); clearTimeout(toastT); toastT=setTimeout(function(){t.className='';},toastMs(m,err)); }
   // PWA ブートストラップ（アプリ本体の外）から更新通知を出すための橋渡し（v0.26）。
   // 登録完了が本体より先の場合もあるので、溜まっている通知があればここで出す。
   (function(){ var e=document.getElementById('verNote'); if(!e) return;
