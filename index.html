@@ -433,9 +433,13 @@
   .dialWrap{display:flex;gap:12px;align-items:center;margin-top:6px;}
   .dialSide{display:flex;flex-direction:column;gap:8px;}
 
-  /* v0.97 すべり面スケッチ（全画面・縦横 1:1） */
-  #sfView{position:fixed;inset:0;z-index:92;background:#0d1218;display:none;flex-direction:column;}
+  /* v0.98 すべり面スケッチ（分割ビュー・縦横 1:1）。
+     横持ち＝右側に 1:1 断面（左に平面図）、縦持ち＝下側（上に平面図）。 */
+  #sfView{position:fixed;z-index:70;background:rgba(13,18,24,.97);display:none;flex-direction:column;
+    border:0 solid var(--line,#2a3542);}
   #sfView.open{display:flex;}
+  #sfView.side{top:0;right:0;bottom:0;left:auto;width:46vw;border-left-width:1px;}
+  #sfView.bottom{left:0;right:0;bottom:0;top:auto;height:46vh;border-top-width:1px;}
   #sfView .sfBar{display:flex;gap:8px;align-items:center;padding:calc(8px + var(--safe-t)) 12px 8px;}
   #sfView .sfBar .lbl{flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   #sfView canvas{flex:1;min-height:0;touch-action:none;display:block;width:100%;}
@@ -718,13 +722,6 @@
       <option value="5">×5</option>
       <option value="10">×10</option>
     </select>
-    <button class="fb" id="profSf">⛰ すべり面</button>
-    <span class="lbl">ピッチ</span>
-    <select id="slipPitch">
-      <option value="5">5 m</option>
-      <option value="10">10 m</option>
-      <option value="20" selected>20 m</option>
-    </select>
     <button class="fb" id="profPng">🖼 画像</button>
     <button class="fb" id="profCsv">📄 CSV</button>
     <button class="fb ghost" id="profClose">✕</button>
@@ -867,10 +864,16 @@
 
 <div id="sfView">
   <div class="sfBar">
-    <span class="lbl" id="sfInfo">すべり面スケッチ（縦横 1:1）</span>
-    <button class="fb" id="sfRedo">↺ 描き直し</button>
+    <span class="lbl" id="sfInfo">すべり面（縦横 1:1）</span>
+    <select id="slipPitch" title="ペア色の標高ピッチ">
+      <option value="5">5 m</option>
+      <option value="10">10 m</option>
+      <option value="20" selected>20 m</option>
+    </select>
+    <button class="fb" id="sfRedo">↺</button>
+    <button class="fb" id="sfClear">🗑</button>
     <button class="fb primary" id="sfOk">✔ 確定</button>
-    <button class="fb ghost" id="sfClose">✕ 中止</button>
+    <button class="fb ghost" id="sfClose">✕</button>
   </div>
   <canvas id="cvSf"></canvas>
   <div class="sfHint">▼頭部から ▲末端へ一筆書き。戻る動きは捨てます。描きなおすときはそのままもう一度なぞる。
@@ -2441,7 +2444,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.97';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.98';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3513,6 +3516,8 @@
   // 選択待ちにする。拾い方は ✥ と同じ（hitStroke）なので道具を ✥ に寄せる。
   function slipArm(){
     if(measPts().length<PROF_MIN_PTS){ toast('先に主測線を引いてください（頂点 2 つ以上）',true); return; }
+    // v0.98 利用者指定: 地すべりモードは主測線が単線（折れ点なし）のときだけ
+    if(measPts().length!==2){ toast('地すべりモードは主測線が単線（頂点 2 つ・折れ点なし）のときに使えます',true); return; }
     SLIP.sel=true; setTool('pan');
     var b=document.getElementById('slipBar'); if(b) b.classList.add('show');
     toast('ブロック範囲線をタップしてください（閉じていない線も受け付けます）'); }
@@ -3702,13 +3707,21 @@
     return null; }
   function sfMinStep(){ var st=PROF.st;
     return Math.max(0.05,((st&&st.len)||0)*0.002); }
+  // 向き。横持ち＝右側（side）・縦持ち＝下側（bottom）。平面図は残りに見える。
+  function sfOrient(w,h){ return (w>h)?'side':'bottom'; }
+  function sfApplyOrient(){ var v=document.getElementById('sfView'); if(!v) return;
+    var o=sfOrient(window.innerWidth,window.innerHeight);
+    v.classList.toggle('side',o==='side'); v.classList.toggle('bottom',o==='bottom'); }
   function sfOpen(){
     if(measPts().length<PROF_MIN_PTS){ toast('先に主測線を引いてください（頂点 2 つ以上）',true); return; }
     if(!activeDem()){ toast('DEM がありません。地形断面が作れないのですべり面は描けません',true); return; }
     refreshProfile(true);
     if(!PROF.SM.length||!PROF.st||!(PROF.st.len>0)){ toast('断面が作れませんでした',true); return; }
     SFV.open=true; document.getElementById('sfView').classList.add('open');
-    sfLayout();
+    sfApplyOrient(); sfLayout();
+    var spx=document.getElementById('slipPitch');
+    if(spx) spx.value=String(slipPitch());
+    contLoad();   // 表示中のページの標高レイヤーを読みに行く（E・F の元）
     var f=sfFit(PROF.st.len,PROF.st.zmin,PROF.st.zmax,SFV.W,SFV.H,48);
     SFV.s=f.s; SFV.cx=f.cx; SFV.cy=f.cy;
     SFV.smin=f.s*0.3; SFV.smax=Math.max(f.s*60,f.s+1);
@@ -3725,8 +3738,9 @@
     if(SFV.pts.length<2){ toast('まだ描いていません（一筆書きでなぞってから ✔）',true); return; }
     var a=SFV.pts.slice();
     a.sort(function(p,q){ return p[0]-q[0]; });   // dir=-1 で描いても d の昇順で持つ
-    S.slip.sf=a; markDirty();
-    sfCloseView(); refreshProfile(true); render();
+    S.slip.sf=a; SFV.pts=[]; SFV.dir=0; markDirty();
+    // v0.98: 確定してもビューは閉じない（モードの間は常に 1:1 断面を出しておく）
+    refreshProfile(true); sfPaint(); render();
     toast('すべり面を確定しました。平面図に直交線を出しています（ピッチ '+slipPitch()+'m）'); }
   // 描画。地形断面・▼▲・既存 sf（灰）・下書き（赤）・グリッドと目盛。
   // 下書きがピッチの倍数の標高を切る位置にはペア色の丸（確定するとここに直交線が出る）。
@@ -3858,9 +3872,173 @@
   function slipClear(){ S.slip=null; SLIP.cr=[]; SLIP.open=false; markDirty();
     slipCancel(); refreshProfile(); render(); }
   // 地図への重ね描き。書き出し（DXF / GeoPDF）には一切出さない（測線と同じ扱い）。
+  // ---- 地形等高線（OCG）の読み込みと E・F（v0.98）----------------------
+  // SPEC_ocg_receiving_notes_v0_96.md の 6 点に従う:
+  //   標高は必ず名前から（/ocN の番号は使わない）・色は見ない（接尾辞が正）・
+  //   ラベル欠落は線の欠落ではない・**表示中のページの中だけ**で集める・
+  //   /Properties の無いページは読み飛ばす。
+  var CONT={state:'idle',key:null,zmap:null,told:false};   // 読んだ等高線（world 座標）
+  var CLIP={sig:'',inside:[],pairs:[]};                     // 切り分けの結果（保存しない・§5.3）
+  // バックスラッシュを使わずに書く（§3.3。[0-9] と [.] で同じ意味）
+  var RE_CONT=new RegExp('^TS_CONTOUR_(-?[0-9]+[.][0-9]{1,3})_(MAJOR|MINOR)$');
+  function contInfo(groups){
+    var out={}, id, m;
+    for(id in groups){ m=RE_CONT.exec(groups[id].name||'');
+      if(m) out[id]={z:parseFloat(m[1]),kind:m[2]}; }
+    return out; }
+  // 命令列を歩いて、OCG の中のポリラインを標高に割り当てる（ページ座標）。
+  // クリップ矩形（直後が clip / eoClip）は図形ではないので数えない。
+  function contWalk(fnArray,argsArray,OPS,info){
+    var st=[],cur=null,byZ={},i,k,q;
+    for(i=0;i<fnArray.length;i++){
+      var fn=fnArray[i], a=argsArray[i];
+      if(fn===OPS.beginMarkedContentProps){
+        var a1=a&&a[1], id=(a1&&a1.id!=null)?a1.id:a1;
+        st.push(cur); cur=(id!=null&&info[id])?info[id]:null; continue; }
+      if(fn===OPS.beginMarkedContent){ st.push(cur); continue; }
+      if(fn===OPS.endMarkedContent){ cur=st.length?st.pop():null; continue; }
+      if(fn!==OPS.constructPath) continue;
+      if(fnArray[i+1]===OPS.eoClip||fnArray[i+1]===OPS.clip) continue;
+      if(!cur) continue;
+      var cops=a[0], co=a[1], line=null;
+      if(!byZ[cur.z]) byZ[cur.z]=[];
+      k=0;
+      for(q=0;q<cops.length;q++){
+        var opc=cops[q];
+        if(opc===OPS.moveTo){
+          if(line&&line.length>1) byZ[cur.z].push(line);
+          line=[[co[k],co[k+1]]]; k+=2; }
+        else if(opc===OPS.lineTo){ if(!line)line=[]; line.push([co[k],co[k+1]]); k+=2; }
+        else if(opc===OPS.curveTo){ k+=6; }
+        else if(opc===OPS.curveTo2||opc===OPS.curveTo3){ k+=4; }
+        else if(opc===OPS.rectangle){ k+=4; } }
+      if(line&&line.length>1) byZ[cur.z].push(line); }
+    return byZ; }
+  // ブロック範囲線を拱えていることが前提。表示中の GeoPDF レイヤーのうち、
+  // 範囲線の先頭点を含む最前面のものを使う。
+  function contLayerFor(){
+    var st=slipBlk(); if(!st||!st.pts||!st.pts.length) return null;
+    var p=st.pts[0], i;
+    for(i=S.rasters.length-1;i>=0;i--){ var r=S.rasters[i];
+      if(r.kind!=='pdf'||r.vis===false||!r.pdf||!r.pgAff) continue;
+      if(p[0]>=r.xmin&&p[0]<=r.xmax&&p[1]>=r.ymin&&p[1]<=r.ymax) return r; }
+    return null; }
+  function contKeyOf(r){ return String(r.docId||'?')+'#'+String(r.pageNo||0); }
+  function contLoad(){
+    var r=contLayerFor();
+    if(!r){ CONT={state:'none',key:null,zmap:null,told:CONT.told}; return; }
+    var key=contKeyOf(r);
+    if(CONT.key===key&&(CONT.state==='ok'||CONT.state==='loading'||CONT.state==='none')) return;
+    CONT={state:'loading',key:key,zmap:null,told:CONT.told};
+    r.pdf.getOptionalContentConfig().then(function(cfg){
+      var info=contInfo(cfg.getGroups()||{}), any=false, id2;
+      for(id2 in info){ any=true; break; }
+      if(!any){ CONT={state:'none',key:key,zmap:null,told:CONT.told};
+        if(!CONT.told){ CONT.told=true;
+          toast('この地図には標高レイヤーがありません（等高線の色分けは TerrainMap v0.52 以降の白図で有効）',true); }
+        render(); return; }
+      r.pdf.getPage(r.pageNo).then(function(page){
+        return page.getOperatorList(); }).then(function(opl){
+        var byZ=contWalk(opl.fnArray,opl.argsArray,pdfjsLib.OPS,info);
+        // ページ座標 → world（pgAff。/VP の 4 隅から作った既存経路）
+        var zmap={}, z, L, i2, j2;
+        for(z in byZ){ var src=byZ[z], dst=[];
+          for(i2=0;i2<src.length;i2++){ L=src[i2]; var w=new Array(L.length);
+            for(j2=0;j2<L.length;j2++) w[j2]=affApply(r.pgAff,L[j2][0],L[j2][1]);
+            dst.push(w); }
+          zmap[z]=dst; }
+        CONT={state:'ok',key:key,zmap:zmap,told:CONT.told};
+        CLIP.sig='';   // 切り分けを作り直させる
+        render(); }).catch(function(){ CONT={state:'none',key:key,zmap:null,told:CONT.told}; });
+    }).catch(function(){ CONT={state:'none',key:key,zmap:null,told:CONT.told}; }); }
+  // 折れ線をブロック範囲線で内外に切る。開いた範囲線でも**両端を最短で
+  // 結んだ仮の閉じ線**で判定する（REQ §1.1 ④。pointInPoly は多角形として閉じて見る
+  // ので、そのまま仮閉じ線の判定になる）。交点で分割し、区分の中点で内外を見る。
+  function polyClip(line,BP,wantInside){
+    var segsB=polySegs(BP,true), out=[], curL=null, i, k;
+    function flush(){ if(curL&&curL.length>1) out.push(curL); curL=null; }
+    for(i=0;i<line.length-1;i++){
+      var a=line[i], b=line[i+1], ts=[0,1], m;
+      for(k=0;k<segsB.length;k++){
+        m=segX(a,b,segsB[k][0],segsB[k][1]);   // segX は点の組を受ける（v0.95 と同じ口）
+        if(m&&m.t>1e-9&&m.t<1-1e-9) ts.push(m.t); }
+      ts.sort(function(p,q){ return p-q; });
+      for(k=0;k<ts.length-1;k++){
+        var t0=ts[k], t1=ts[k+1]; if(t1-t0<1e-9) continue;
+        var tm=(t0+t1)/2;
+        var mx=a[0]+(b[0]-a[0])*tm, my=a[1]+(b[1]-a[1])*tm;
+        var ins=pointInPoly(mx,my,BP);
+        if(ins===wantInside){
+          var p0=[a[0]+(b[0]-a[0])*t0,a[1]+(b[1]-a[1])*t0];
+          var p1=[a[0]+(b[0]-a[0])*t1,a[1]+(b[1]-a[1])*t1];
+          if(!curL) curL=[p0];
+          curL.push(p1); }
+        else flush(); }
+    }
+    flush(); return out; }
+  // E（範囲内の全標高を薄く）と F（ペア標高の範囲外をペア色）を作る。
+  // 重いので署名（範囲線・ピッチ・段・ページ）が変わったときだけ計算する。
+  function slipClipSig(st,lv){
+    return String(S.slip&&S.slip.blk)+'/'+(st?st.pts.length:0)+'/'+(st&&st.closed?1:0)
+      +'/'+slipPitch()+'/'+lv.join(',')+'/'+String(CONT.key); }
+  function slipRefreshClip(){
+    var st=slipBlk();
+    var lv=[], i, seen={};
+    for(i=0;i<PLAN.length;i++){ if(!seen[PLAN[i].z]){ seen[PLAN[i].z]=1; lv.push(PLAN[i].z); } }
+    var sig=slipClipSig(st,lv);
+    if(sig===CLIP.sig) return;
+    CLIP={sig:sig,inside:[],pairs:[]};
+    if(!st||!st.pts||st.pts.length<3||CONT.state!=='ok') return;
+    var BP=st.pts;
+    var bx0=1e30,by0=1e30,bx1=-1e30,by1=-1e30;
+    for(i=0;i<BP.length;i++){ if(BP[i][0]<bx0)bx0=BP[i][0]; if(BP[i][0]>bx1)bx1=BP[i][0];
+      if(BP[i][1]<by0)by0=BP[i][1]; if(BP[i][1]>by1)by1=BP[i][1]; }
+    var z, L, k;
+    for(z in CONT.zmap){
+      var lines=CONT.zmap[z];
+      for(k=0;k<lines.length;k++){ L=lines[k];
+        // 範囲線の外接矩形に掛からない線は中に入れない（E の足切り）
+        var lx0=1e30,ly0=1e30,lx1=-1e30,ly1=-1e30,j;
+        for(j=0;j<L.length;j++){ if(L[j][0]<lx0)lx0=L[j][0]; if(L[j][0]>lx1)lx1=L[j][0];
+          if(L[j][1]<ly0)ly0=L[j][1]; if(L[j][1]>ly1)ly1=L[j][1]; }
+        if(lx1<bx0||lx0>bx1||ly1<by0||ly0>by1) continue;
+        var ins=polyClip(L,BP,true);
+        for(j=0;j<ins.length;j++) CLIP.inside.push(ins[j]); } }
+    for(i=0;i<lv.length;i++){
+      var zl=CONT.zmap[lv[i]]; if(!zl) continue;
+      var col=pairColor(lv[i]), pl={z:lv[i],col:col,lines:[]};
+      for(k=0;k<zl.length;k++){
+        var outs=polyClip(zl[k],BP,false), j2;
+        for(j2=0;j2<outs.length;j2++) pl.lines.push(outs[j2]); }
+      if(pl.lines.length) CLIP.pairs.push(pl); } }
   function drawSlip(){
     var st=slipBlk(); if(!st||!st.pts||!st.pts.length) return;
     slipRecalc(); PLAN=slipPlan();
+    if(CONT.state==='idle') contLoad();
+    slipRefreshClip();
+    // E: 範囲内の地形コンターを薄く（下地はラスタなので白の半透明を上塗りして薄める）
+    var ci;
+    ctx.setLineDash([]);
+    ctx.strokeStyle='rgba(255,255,255,.62)'; ctx.lineWidth=lw(2.4);
+    for(ci=0;ci<CLIP.inside.length;ci++){ var IL=CLIP.inside[ci];
+      ctx.beginPath();
+      for(var cj=0;cj<IL.length;cj++){ var cp=w2s(IL[cj][0],IL[cj][1]);
+        cj?ctx.lineTo(cp[0],cp[1]):ctx.moveTo(cp[0],cp[1]); }
+      ctx.stroke(); }
+    // F・G: ペア標高の地形コンター（範囲外）を直交線と同じペア色で
+    for(ci=0;ci<CLIP.pairs.length;ci++){ var PL=CLIP.pairs[ci];
+      ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=lw(3.4);
+      for(var pk=0;pk<PL.lines.length;pk++){ var FL=PL.lines[pk];
+        ctx.beginPath();
+        for(var fj=0;fj<FL.length;fj++){ var fp=w2s(FL[fj][0],FL[fj][1]);
+          fj?ctx.lineTo(fp[0],fp[1]):ctx.moveTo(fp[0],fp[1]); }
+        ctx.stroke(); }
+      ctx.strokeStyle=PL.col; ctx.lineWidth=lw(2);
+      for(pk=0;pk<PL.lines.length;pk++){ var FL2=PL.lines[pk];
+        ctx.beginPath();
+        for(fj=0;fj<FL2.length;fj++){ var fp2=w2s(FL2[fj][0],FL2[fj][1]);
+          fj?ctx.lineTo(fp2[0],fp2[1]):ctx.moveTo(fp2[0],fp2[1]); }
+        ctx.stroke(); } }
     var sp=st.pts.map(function(q){ return w2s(q[0],q[1]); }), i;
     ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round'; ctx.setLineDash([]);
     ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=lw(5.4);
@@ -5653,11 +5831,11 @@
   document.getElementById('measBack').onclick=measBack;
   document.getElementById('measProf').onclick=openProfile;
   // v0.95: ⛰ は「選択待ちにする」。すでに選んでいるときの再タップは選び直し。
-  document.getElementById('measSlip').onclick=function(){ slipArm(); };
+  document.getElementById('measSlip').onclick=function(){ slipSfToggle(); };   // v0.98 ⛰ が入口（選択→分割ビュー）
   // v0.97: ⛰ すべり面 は全画面の 1:1 スケッチを開く。ダブルタップで消去は据え置き。
-  document.getElementById('profSf').onclick=function(){ slipSfToggle(); };
-  document.getElementById('profSf').ondblclick=function(){ slipSfClear(); };
   document.getElementById('sfOk').onclick=function(){ sfCommit(); };
+  document.getElementById('sfClear').onclick=function(){ SFV.pts=[]; SFV.dir=0;
+    slipSfClear(); sfPaint(); };
   document.getElementById('sfRedo').onclick=function(){ SFV.pts=[]; SFV.dir=0; sfPaint(); };
   document.getElementById('sfClose').onclick=function(){ sfCloseView();
     toast('中止しました（確定済みのすべり面はそのままです）'); };
@@ -5668,10 +5846,11 @@
     c.addEventListener('pointermove',sfMove,{passive:false});
     c.addEventListener('pointerup',sfUp,{passive:false});
     c.addEventListener('pointercancel',sfUp,{passive:false});
-    window.addEventListener('resize',function(){ if(SFV.open) sfPaint(); }); })();
+    window.addEventListener('resize',function(){
+      if(SFV.open){ sfApplyOrient(); sfPaint(); render(); } }); })();
   document.getElementById('slipPitch').onchange=function(){
     if(S.slip){ S.slip.pitch=+this.value||SLIP_PITCH; markDirty(); }
-    PLAN=slipPlan(); paintProfile(); render(); };
+    PLAN=slipPlan(); CLIP.sig=''; paintProfile(); sfPaint(); render(); };
   document.getElementById('slipCancel').onclick=function(){ slipCancel(); };
   document.getElementById('measLine').onclick=measToStroke;
   document.getElementById('measDim').onclick=measToDim;   // v0.43
