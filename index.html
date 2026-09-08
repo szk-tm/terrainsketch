@@ -742,7 +742,7 @@
   <button class="fb" id="symPlus">＋</button>
 </div>
 <div class="fbar" id="leaderBar"><span class="lbl" id="leaderInfo">① 指したい位置（矢印の先）をタップ</span><button class="fb ghost" id="leaderCancel">✕ 中止</button></div>
-<div class="fbar" id="slipBar"><span class="lbl" id="slipInfo">① ブロック範囲線をタップ（閉じていない線も可）</span><button class="fb ghost" id="slipCancel">✕ 中止</button></div>
+<div class="fbar" id="slipBar"><span class="lbl" id="slipInfo">ブロック範囲（閉じた線）をタップしてください</span><button class="fb" id="slipReuse">↩ 前回の範囲</button><button class="fb ghost" id="slipCancel">✕ 中止</button></div>
 
 <div id="edge"></div>
 <div id="drawerBack"></div>
@@ -2447,7 +2447,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.99';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.00';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3501,7 +3501,7 @@
     if(lo>=0&&lo!==hi) CR[lo].kind='tail';
     return CR; }
   // 選んであるブロック範囲線。id で引く（添字で持つと消しゴムでずれる）。
-  var SLIP={sel:false,cr:[],open:false,resume:null};   // v0.97 resume=選択後に戻る先（'sf'=スケッチ）
+  var SLIP={sel:false,cr:[],open:false,resume:null,prev:null};   // v1.00 prev=前回選んだ範囲線の id   // v0.97 resume=選択後に戻る先（'sf'=スケッチ）
   function slipBlk(){ if(!S.slip||S.slip.blk==null) return null;
     for(var i=0;i<S.strokes.length;i++) if(S.strokes[i].id===S.slip.blk) return S.strokes[i];
     return null; }
@@ -3523,17 +3523,29 @@
     if(measPts().length!==2){ toast('地すべりモードは主測線が単線（頂点 2 つ・折れ点なし）のときに使えます',true); return; }
     SLIP.sel=true; setTool('pan');
     var b=document.getElementById('slipBar'); if(b) b.classList.add('show');
-    toast('ブロック範囲線をタップしてください（閉じていない線も受け付けます）'); }
+    // v1.00: 前回の範囲が生きているときだけ ↩ を出す
+    var rb=document.getElementById('slipReuse');
+    if(rb) rb.style.display=(SLIP.prev!=null)?'':'none';
+    toast('ブロック範囲（閉じた線）をタップしてください。主測線を横切る線を選んでください（開いた線も可）'); }
   function slipCancel(){ SLIP.sel=false; SLIP.resume=null;
     var b=document.getElementById('slipBar'); if(b) b.classList.remove('show'); }
   // ブロック範囲線を決める。決めたら 📏 に戻して断面図を開き、▼▲ をその場で見せる。
   function slipPick(i){ var st=S.strokes[i]; if(!st) return false;
+    // v1.00: **主測線と交わらない線は受け付けない**。
+    // 従来は受け付けて「交わっていません」と言うだけだったため、そのまま
+    // ▼▲ の無い 1:1 断面が開いてしまっていた（実機報告の症状）。
+    if(!st.pts||st.pts.length<2){
+      toast('これは線でないのでブロック範囲にできません。閉じた線をタップしてください',true); return false; }
+    var pre=slipMark(slipCross(measPts(),st.pts,!!st.closed));
+    if(!pre.length){
+      toast('この線は主測線と交わっていません。主測線を横切るブロック範囲（閉じた線）をタップしてください',true);
+      return false; }   // 選択待ちは続ける
     S.slip={blk:st.id}; slipCancel(); markDirty();
-    var cr=slipRecalc(), msg='ブロック範囲線を選びました（'+(st.closed?'閉じた線':'開いた線')+'・交点 '+cr.length+' 点';
+    var cr=slipRecalc(), msg='ブロック範囲を選びました（'+(st.closed?'閉じた線':'開いた線・仮の閉じ線で内外を見ます')+'・交点 '+cr.length+' 点';
     if(slipCount('tail')) msg+='・▼頭部 ▲末端）';
     else if(slipCount('head')) msg+='・▼頭部のみ（末端は開いています））';
-    else msg+='・主測線と交わっていません）';
-    toast(msg,!cr.length);
+    else msg+='）';
+    toast(msg);
     setTool('measure');
     if(activeDem()){ if(profOpen()) refreshProfile(true); else openProfile(); }
     render();
@@ -3666,9 +3678,20 @@
     refreshProfile(true); render(); }
   // ⛰ すべり面（v0.97 で全画面ビューに変更）。ブロック未選択なら
   // 選択待ちに入り、選べたら自動でスケッチビューを開く（利用者指定の手順）。
+  // v1.00: **毎回ブロック範囲の選択から始める**。
+  // 以前は S.slip.blk が入っていると選択を飛ばしていたが、S.slip は自動保存から
+  // 復元されるので、過去に一度選んでいると以後ずっと飛び、しかもその範囲線が
+  // 今の主測線と交わらないと ▼▲ の無い断面が開いてしまっていた（実機報告）。
   function slipSfToggle(){
-    if(!S.slip||S.slip.blk==null){ SLIP.resume='sf'; slipArm(); return; }
-    sfOpen(); }
+    if(SFV.open) sfCloseView();                                   // 開いていたら畳んで選び直し
+    SLIP.prev=(S.slip&&S.slip.blk!=null&&slipBlk())?S.slip.blk:null;
+    SLIP.resume='sf'; slipArm(); }
+  // 前回の範囲をそのまま使う（1 タップの道）。
+  function slipReuse(){
+    var i,id=SLIP.prev;
+    if(id==null){ toast('前回の範囲がありません。地図上でブロック範囲（閉じた線）をタップしてください',true); return; }
+    for(i=0;i<S.strokes.length;i++) if(S.strokes[i].id===id){ slipPick(i); return; }
+    toast('前回の範囲線が見つかりません（消されたようです）。別の線をタップしてください',true); }
   // ---- すべり面スケッチ（v0.97: 全画面・縦横 1:1）------------------------
   // 下側の細長いパネルでは 1:1 が収まらないので、全画面にして
   // **倍率だけ**をピンチで変えられるようにした（縦と横は常に同じ s [px/m]）。
@@ -3720,6 +3743,11 @@
     if(!activeDem()){ toast('DEM がありません。地形断面が作れないのですべり面は描けません',true); return; }
     refreshProfile(true);
     if(!PROF.SM.length||!PROF.st||!(PROF.st.len>0)){ toast('断面が作れませんでした',true); return; }
+    // v1.00 保険: ▼▲ が無いままスケッチを開かない（起点・終点が決まらない）。
+    slipRecalc();
+    if(!SLIP.cr.length){
+      toast('ブロック範囲が主測線と交わっていません。⛰ をもう一度押して範囲を選び直してください',true);
+      SFV.open=false; return; }
     SFV.open=true; document.getElementById('sfView').classList.add('open');
     sfApplyOrient(); sfLayout();
     var spx=document.getElementById('slipPitch');
@@ -5859,6 +5887,7 @@
     if(S.slip){ S.slip.pitch=+this.value||SLIP_PITCH; markDirty(); }
     PLAN=slipPlan(); CLIP.sig=''; paintProfile(); sfPaint(); render(); };
   document.getElementById('slipCancel').onclick=function(){ slipCancel(); };
+  document.getElementById('slipReuse').onclick=function(){ slipReuse(); };
   document.getElementById('measLine').onclick=measToStroke;
   document.getElementById('measDim').onclick=measToDim;   // v0.43
   // ---- 消しゴムの設定シート（v0.46）--------------------------------------------
