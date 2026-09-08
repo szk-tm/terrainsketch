@@ -2447,7 +2447,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.00';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.01';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3531,6 +3531,9 @@
     var b=document.getElementById('slipBar'); if(b) b.classList.remove('show'); }
   // ブロック範囲線を決める。決めたら 📏 に戻して断面図を開き、▼▲ をその場で見せる。
   function slipPick(i){ var st=S.strokes[i]; if(!st) return false;
+    // v1.01: **slipCancel が SLIP.resume を畳む**ので、戻り先はここで控える。
+    // 控えを忘れていたため「範囲を選んでも 1:1 断面が出ない」が起きていた（実機報告）。
+    var want=(SLIP.resume==='sf');
     // v1.00: **主測線と交わらない線は受け付けない**。
     // 従来は受け付けて「交わっていません」と言うだけだったため、そのまま
     // ▼▲ の無い 1:1 断面が開いてしまっていた（実機報告の症状）。
@@ -3547,10 +3550,12 @@
     else msg+='）';
     toast(msg);
     setTool('measure');
-    if(activeDem()){ if(profOpen()) refreshProfile(true); else openProfile(); }
+    // v1.01: ⛰ から来た選択は **1:1 断面だけ**を出す（v0.98 で UI を分けた趣旨）。
+    // 従来はここで既存の地形断面パネルを開いていたため、下に地形断面図が出て
+    // 右の 1:1 断面が出ないという見え方になっていた（実機報告）。
+    if(want){ SLIP.resume=null; sfOpen(); }
+    else if(activeDem()){ if(profOpen()) refreshProfile(true); else openProfile(); }
     render();
-    // v0.97: ⛰ すべり面 から来た選択なら、そのまま 1:1 のスケッチに進む（利用者指定の手順）
-    if(SLIP.resume==='sf'){ SLIP.resume=null; sfOpen(); }
     return true; }
   // ---- 地すべり面モード C・D（v0.96）------------------------------------
   // 利用者の指定: 直交線は一律の長さでなく、**交点からブロック範囲線を跨いで
@@ -3749,6 +3754,8 @@
       toast('ブロック範囲が主測線と交わっていません。⛰ をもう一度押して範囲を選び直してください',true);
       SFV.open=false; return; }
     SFV.open=true; document.getElementById('sfView').classList.add('open');
+    // v1.01: 地形断面パネルとは UI を分ける（縦持ちでは下半分を奴い合う）。
+    if(profOpen()) closeProfile();
     sfApplyOrient(); sfLayout();
     var spx=document.getElementById('slipPitch');
     if(spx) spx.value=String(slipPitch());
