@@ -433,6 +433,13 @@
   .dialWrap{display:flex;gap:12px;align-items:center;margin-top:6px;}
   .dialSide{display:flex;flex-direction:column;gap:8px;}
 
+  /* v0.97 すべり面スケッチ（全画面・縦横 1:1） */
+  #sfView{position:fixed;inset:0;z-index:92;background:#0d1218;display:none;flex-direction:column;}
+  #sfView.open{display:flex;}
+  #sfView .sfBar{display:flex;gap:8px;align-items:center;padding:calc(8px + var(--safe-t)) 12px 8px;}
+  #sfView .sfBar .lbl{flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #sfView canvas{flex:1;min-height:0;touch-action:none;display:block;width:100%;}
+  #sfView .sfHint{font-size:12px;color:var(--muted);text-align:center;padding:4px 10px 10px;}
   #photoView{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;}
   #photoView img{max-width:96vw;max-height:80vh;border-radius:8px;}
   #photoView .cap{font-size:17px;font-weight:600;line-height:1.5;color:#f2f6fa;text-align:center;
@@ -858,6 +865,17 @@
   </div>
 </div></div>
 
+<div id="sfView">
+  <div class="sfBar">
+    <span class="lbl" id="sfInfo">すべり面スケッチ（縦横 1:1）</span>
+    <button class="fb" id="sfRedo">↺ 描き直し</button>
+    <button class="fb primary" id="sfOk">✔ 確定</button>
+    <button class="fb ghost" id="sfClose">✕ 中止</button>
+  </div>
+  <canvas id="cvSf"></canvas>
+  <div class="sfHint">▼頭部から ▲末端へ一筆書き。戻る動きは捨てます。描きなおすときはそのままもう一度なぞる。
+    2 本指で移動・ピンチで拡大（縦横比は 1:1 のまま）</div>
+</div>
 <div id="photoView"><button class="ghost pv-close" id="pvClose">✕</button><img id="pvImg" alt=""><div class="cap" id="pvCap"></div><div class="tapHint">写真の外側をタップで閉じる</div></div>
 
 <div id="view3d">
@@ -2423,7 +2441,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='0.96';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='0.97';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3477,7 +3495,7 @@
     if(lo>=0&&lo!==hi) CR[lo].kind='tail';
     return CR; }
   // 選んであるブロック範囲線。id で引く（添字で持つと消しゴムでずれる）。
-  var SLIP={sel:false,cr:[],open:false,draw:false};   // v0.96 draw=すべり面の描画中
+  var SLIP={sel:false,cr:[],open:false,resume:null};   // v0.97 resume=選択後に戻る先（'sf'=スケッチ）
   function slipBlk(){ if(!S.slip||S.slip.blk==null) return null;
     for(var i=0;i<S.strokes.length;i++) if(S.strokes[i].id===S.slip.blk) return S.strokes[i];
     return null; }
@@ -3498,7 +3516,7 @@
     SLIP.sel=true; setTool('pan');
     var b=document.getElementById('slipBar'); if(b) b.classList.add('show');
     toast('ブロック範囲線をタップしてください（閉じていない線も受け付けます）'); }
-  function slipCancel(){ SLIP.sel=false;
+  function slipCancel(){ SLIP.sel=false; SLIP.resume=null;
     var b=document.getElementById('slipBar'); if(b) b.classList.remove('show'); }
   // ブロック範囲線を決める。決めたら 📏 に戻して断面図を開き、▼▲ をその場で見せる。
   function slipPick(i){ var st=S.strokes[i]; if(!st) return false;
@@ -3510,7 +3528,10 @@
     toast(msg,!cr.length);
     setTool('measure');
     if(activeDem()){ if(profOpen()) refreshProfile(true); else openProfile(); }
-    render(); return true; }
+    render();
+    // v0.97: ⛰ すべり面 から来た選択なら、そのまま 1:1 のスケッチに進む（利用者指定の手順）
+    if(SLIP.resume==='sf'){ SLIP.resume=null; sfOpen(); }
+    return true; }
   // ---- 地すべり面モード C・D（v0.96）------------------------------------
   // 利用者の指定: 直交線は一律の長さでなく、**交点からブロック範囲線を跨いで
   // 10m ほど伸びる**。交わらない側（開いた末端など）は見切りの長さに落とす。
@@ -3633,41 +3654,203 @@
     if(a.z==null||b.z==null) return (a.z!=null?a.z:b.z);
     var u=(b.d>a.d)?((d-a.d)/(b.d-a.d)):0;
     return a.z+(b.z-a.z)*u; }
-  // スケッチの 1 点を受ける。地表線より上は不可（地表に押さえる）。
-  // ▼▲（交点）の近くはその点に吸着する。
-  function slipSfPoint(cx,cy){
-    var q=prof2dz(cx,cy); if(!q) return null;
-    var st=PROF.st, snapR=(st&&st.len)?st.len*SLIP_SNAP_R:0, i;
-    for(i=0;i<SLIP.cr.length;i++){ var m=SLIP.cr[i];
-      if(m.z==null) continue;
-      if(Math.abs(m.d-q.d)<=snapR){ return {d:m.d,z:m.z,snap:true}; } }
-    var sz=profZAt(q.d);
-    if(sz!=null&&q.z>sz) q.z=sz;                  // 地表より上には描けない
-    return {d:q.d,z:q.z,snap:false}; }
-  function slipSfArr(){ if(!S.slip) return null;
-    if(!S.slip.sf) S.slip.sf=[]; return S.slip.sf; }
-  function slipSfAdd(cx,cy){
-    var a=slipSfArr(); if(!a) return false;
-    var p=slipSfPoint(cx,cy); if(!p) return false;
-    // 近すぎる点は間引く（ペンの微小な掺れを頂点にしない）
-    if(a.length){ var q=a[a.length-1], st=PROF.st;
-      var mind=(st&&st.len)?st.len*0.002:0;
-      if(Math.abs(q[0]-p.d)<mind&&Math.abs(q[1]-p.z)<0.05) return false; }
-    a.push([p.d,p.z]); markDirty(); return true; }
-  function slipSfDone(){
-    var a=slipSfArr();
-    if(a&&a.length){ a.sort(function(p,q){ return p[0]-q[0]; }); }   // d の昇順にする
-    SLIP.draw=false; syncSfBtn(); refreshProfile(true); render(); }
   function slipSfClear(){ if(S.slip){ S.slip.sf=[]; markDirty(); }
     refreshProfile(true); render(); }
+  // ⛰ すべり面（v0.97 で全画面ビューに変更）。ブロック未選択なら
+  // 選択待ちに入り、選べたら自動でスケッチビューを開く（利用者指定の手順）。
   function slipSfToggle(){
-    if(!S.slip||S.slip.blk==null){ toast('先に ⛰ でブロック範囲線を選んでください',true); return; }
-    if(SLIP.draw){ slipSfDone(); return; }
-    SLIP.draw=true; syncSfBtn();
-    toast('断面図の上をなぞってすべり面を描きます（▼▲ に吸着・地表より上には描けません）'); }
-  function syncSfBtn(){ var b=document.getElementById('profSf');
-    if(b){ b.classList.toggle('primary',!!SLIP.draw);
-      b.textContent=SLIP.draw?'✓ 描き終わり':'⛰ すべり面'; } }
+    if(!S.slip||S.slip.blk==null){ SLIP.resume='sf'; slipArm(); return; }
+    sfOpen(); }
+  // ---- すべり面スケッチ（v0.97: 全画面・縦横 1:1）------------------------
+  // 下側の細長いパネルでは 1:1 が収まらないので、全画面にして
+  // **倍率だけ**をピンチで変えられるようにした（縦と横は常に同じ s [px/m]）。
+  var SF_SNAP_PX=24;   // ▼▲ への吸着（画面 px）
+  var SFV={open:false,s:1,cx:0,cy:0,W:0,H:0,smin:0.1,smax:1000,
+           pts:[],dir:0,drawing:false,pd:{},pan0:null};
+  function sfCanvas(){ return document.getElementById('cvSf'); }
+  function sfLayout(){ var c=sfCanvas(); if(!c)return;
+    var r=c.getBoundingClientRect();
+    SFV.W=Math.max(80,Math.round(r.width)); SFV.H=Math.max(60,Math.round(r.height)); }
+  // 画面 ↔ （距離 d, 標高 z）。X も Y も同じ倍率 s を使うので常に 1:1。
+  function sfX(d){ return (d-SFV.cx)*SFV.s+SFV.W/2; }
+  function sfY(z){ return SFV.H/2-(z-SFV.cy)*SFV.s; }
+  function sfInv(px,py){ return {d:SFV.cx+(px-SFV.W/2)/SFV.s,
+                                 z:SFV.cy-(py-SFV.H/2)/SFV.s}; }
+  // 全体が収まる倍率（縦横とも同じ s で収める＝1:1 のまま引きで見る）。
+  function sfFit(len,zlo,zhi,W,H,pad){ pad=(pad==null)?48:pad;
+    var rw=Math.max(1e-6,len), rh=Math.max(1e-6,zhi-zlo);
+    var s=Math.min((W-2*pad)/rw,(H-2*pad)/rh);
+    if(!(s>0)||!isFinite(s)) s=1;
+    return {s:s,cx:len/2,cy:(zlo+zhi)/2}; }
+  function sfHead(){ for(var i=0;i<SLIP.cr.length;i++) if(SLIP.cr[i].kind==='head'&&SLIP.cr[i].z!=null) return SLIP.cr[i]; return null; }
+  function sfTail(){ for(var i=0;i<SLIP.cr.length;i++) if(SLIP.cr[i].kind==='tail'&&SLIP.cr[i].z!=null) return SLIP.cr[i]; return null; }
+  // 一筆書き: 進む向き dir（+1 = d 増加 / -1 = 減少）に単調。戻る動きは捨てる。
+  // dir が未定（0）のときは minStep 以上動いた時点で向きを決める。
+  function sfTryAppend(st,d,z,minStep){
+    if(!st.pts.length){ st.pts.push([d,z]); return true; }
+    var last=st.pts[st.pts.length-1];
+    if(st.dir===0){
+      if(Math.abs(d-last[0])<minStep) return false;
+      st.dir=(d>last[0])?1:-1; }
+    if((d-last[0])*st.dir<minStep) return false;
+    st.pts.push([d,z]); return true; }
+  // ▼▲ への吸着（画面距離で判定）。当たらなければ null。
+  function sfSnap(px,py){
+    var c=[sfHead(),sfTail()],i;
+    for(i=0;i<c.length;i++){ var m=c[i]; if(!m) continue;
+      if(Math.hypot(sfX(m.d)-px,sfY(m.z)-py)<=SF_SNAP_PX) return m; }
+    return null; }
+  function sfMinStep(){ var st=PROF.st;
+    return Math.max(0.05,((st&&st.len)||0)*0.002); }
+  function sfOpen(){
+    if(measPts().length<PROF_MIN_PTS){ toast('先に主測線を引いてください（頂点 2 つ以上）',true); return; }
+    if(!activeDem()){ toast('DEM がありません。地形断面が作れないのですべり面は描けません',true); return; }
+    refreshProfile(true);
+    if(!PROF.SM.length||!PROF.st||!(PROF.st.len>0)){ toast('断面が作れませんでした',true); return; }
+    SFV.open=true; document.getElementById('sfView').classList.add('open');
+    sfLayout();
+    var f=sfFit(PROF.st.len,PROF.st.zmin,PROF.st.zmax,SFV.W,SFV.H,48);
+    SFV.s=f.s; SFV.cx=f.cx; SFV.cy=f.cy;
+    SFV.smin=f.s*0.3; SFV.smax=Math.max(f.s*60,f.s+1);
+    SFV.pts=[]; SFV.dir=0; SFV.drawing=false; SFV.pd={}; SFV.pan0=null;
+    sfPaint();
+    var h=sfHead(), t=sfTail();
+    toast(h?(t?'▼頭部から ▲末端へ一筆書きで描いてください'
+              :'▼頭部から末端の方向へ描いてください（末端は開いています）')
+            :'一筆書きで描いてください'); }
+  function sfCloseView(){ SFV.open=false; SFV.drawing=false; SFV.pd={};
+    var v=document.getElementById('sfView'); if(v) v.classList.remove('open'); }
+  // ✔ 確定。下書きが無ければ何もしない（既存の sf を壊さない）。
+  function sfCommit(){
+    if(SFV.pts.length<2){ toast('まだ描いていません（一筆書きでなぞってから ✔）',true); return; }
+    var a=SFV.pts.slice();
+    a.sort(function(p,q){ return p[0]-q[0]; });   // dir=-1 で描いても d の昇順で持つ
+    S.slip.sf=a; markDirty();
+    sfCloseView(); refreshProfile(true); render();
+    toast('すべり面を確定しました。平面図に直交線を出しています（ピッチ '+slipPitch()+'m）'); }
+  // 描画。地形断面・▼▲・既存 sf（灰）・下書き（赤）・グリッドと目盛。
+  // 下書きがピッチの倍数の標高を切る位置にはペア色の丸（確定するとここに直交線が出る）。
+  function sfPaint(){
+    var c=sfCanvas(); if(!c||!SFV.open) return;
+    sfLayout();
+    var dpr=Math.min(window.devicePixelRatio||1,2.5);
+    if(c.width!==Math.round(SFV.W*dpr)||c.height!==Math.round(SFV.H*dpr)){
+      c.width=Math.round(SFV.W*dpr); c.height=Math.round(SFV.H*dpr); }
+    var g=c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
+    g.clearRect(0,0,SFV.W,SFV.H);
+    var i, SM=PROF.SM;
+    // グリッド（両軸とも同じ刻み＝マスが正方形＝1:1 が目で確かめられる）
+    var step=niceLen(90/SFV.s), d0=sfInv(0,SFV.H).d, d1=sfInv(SFV.W,0).d;
+    var z0=sfInv(0,SFV.H).z, z1=sfInv(0,0).z, v;
+    g.strokeStyle='rgba(160,180,200,.16)'; g.lineWidth=1;
+    g.fillStyle='rgba(160,180,200,.65)'; g.font='11px ui-monospace,monospace';
+    for(v=Math.ceil(d0/step)*step; v<=d1; v+=step){
+      g.beginPath(); g.moveTo(sfX(v),0); g.lineTo(sfX(v),SFV.H); g.stroke();
+      g.fillText(String(Math.round(v))+'m',sfX(v)+3,SFV.H-6); }
+    for(v=Math.ceil(z0/step)*step; v<=z1; v+=step){
+      g.beginPath(); g.moveTo(0,sfY(v)); g.lineTo(SFV.W,sfY(v)); g.stroke();
+      g.fillText(String(Math.round(v)),4,sfY(v)-3); }
+    // 地形断面
+    if(SM.length>1){
+      g.strokeStyle='#9fb3c8'; g.lineWidth=2; g.setLineDash([]);
+      g.beginPath();
+      for(i=0;i<SM.length;i++){ if(SM[i].z==null) continue;
+        var px=sfX(SM[i].d), py=sfY(SM[i].z);
+        i?g.lineTo(px,py):g.moveTo(px,py); }
+      g.stroke(); }
+    // ▼頭部 / ▲末端（吸着の目安円も薄く）
+    var hm=[sfHead(),sfTail()];
+    for(i=0;i<2;i++){ var m=hm[i]; if(!m) continue;
+      var mx=sfX(m.d), my=sfY(m.z), up=(m.kind==='tail')?-1:1;
+      g.strokeStyle='rgba(255,107,107,.5)'; g.lineWidth=1;
+      g.beginPath(); g.arc(mx,my,SF_SNAP_PX,0,7); g.stroke();
+      g.fillStyle='#ff6b6b'; g.strokeStyle='#ff6b6b'; g.lineWidth=1.6;
+      g.beginPath();
+      g.moveTo(mx,my-9*up); g.lineTo(mx-6,my-18*up); g.lineTo(mx+6,my-18*up);
+      g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(mx,my); g.lineTo(mx,my-9*up); g.stroke();
+      g.beginPath(); g.arc(mx,my,3.2,0,7); g.fill(); }
+    // 確定済みのすべり面（灰の破線）
+    var sf=(S.slip&&S.slip.sf)||[];
+    if(sf.length>1){
+      g.strokeStyle='rgba(210,220,230,.55)'; g.lineWidth=1.6; g.setLineDash([6,5]);
+      g.beginPath();
+      for(i=0;i<sf.length;i++){ i?g.lineTo(sfX(sf[i][0]),sfY(sf[i][1]))
+                                 :g.moveTo(sfX(sf[i][0]),sfY(sf[i][1])); }
+      g.stroke(); g.setLineDash([]); }
+    // 下書き（赤）と、ピッチの倍数の標高を切る位置のペア色の丸
+    if(SFV.pts.length>1){
+      g.strokeStyle='#ff6b6b'; g.lineWidth=2.5;
+      g.beginPath();
+      for(i=0;i<SFV.pts.length;i++){ i?g.lineTo(sfX(SFV.pts[i][0]),sfY(SFV.pts[i][1]))
+                                       :g.moveTo(sfX(SFV.pts[i][0]),sfY(SFV.pts[i][1])); }
+      g.stroke();
+      var srt=SFV.pts.slice().sort(function(p,q){ return p[0]-q[0]; });
+      var lv=slipLevels(srt,slipPitch()), k;
+      for(i=0;i<lv.length;i++){ var ds=sfCrossD(srt,lv[i]);
+        for(k=0;k<ds.length;k++){ g.fillStyle=pairColor(lv[i]);
+          g.beginPath(); g.arc(sfX(ds[k]),sfY(lv[i]),4.5,0,7); g.fill(); } } }
+    // 左上の読み: 倍率と頭部・末端の標高
+    g.fillStyle='rgba(230,238,246,.9)'; g.font='12px ui-monospace,monospace';
+    var t1='1m = '+SFV.s.toFixed(2)+'px（縦横 1:1）';
+    var t2=(hm[0]?('▼'+hm[0].z.toFixed(1)+'m'):'')+(hm[1]?('  ▲'+hm[1].z.toFixed(1)+'m'):'');
+    g.fillText(t1,10,20); if(t2) g.fillText(t2,10,36); }
+  // 入力。1 本指／ペン＝一筆書き、2 本指＝移動と拡大（倍率だけ。縦横比は不変）。
+  function sfPointerXY(e){ var c=sfCanvas(), r=c.getBoundingClientRect();
+    return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+  function sfDown(e){
+    var p=sfPointerXY(e); SFV.pd[e.pointerId]=p;
+    var ids=Object.keys(SFV.pd);
+    if(ids.length===1){
+      SFV.drawing=true; SFV.pts=[]; SFV.dir=0;
+      var h=sfHead(), t=sfTail();
+      if(h&&t) SFV.dir=(t.d>h.d)?1:-1;              // 頭部→末端の向きに固定
+      var sn=sfSnap(p.x,p.y), q=sn?{d:sn.d,z:sn.z}:sfInv(p.x,p.y);
+      if(!sn){ var sz=profZAt(q.d); if(sz!=null&&q.z>sz) q.z=sz; }
+      SFV.pts.push([q.d,q.z]);
+    }else if(ids.length===2){
+      // 2 本目が置かれたら下書きは捨てて移動・拡大に入る
+      SFV.drawing=false; SFV.pts=[];
+      var a=SFV.pd[ids[0]], b=SFV.pd[ids[1]];
+      SFV.pan0={s:SFV.s,cx:SFV.cx,cy:SFV.cy,a:{x:a.x,y:a.y},b:{x:b.x,y:b.y}};
+    }
+    sfPaint(); e.preventDefault(); }
+  function sfMove(e){
+    if(!(e.pointerId in SFV.pd)) return;
+    var p=sfPointerXY(e); SFV.pd[e.pointerId]=p;
+    var ids=Object.keys(SFV.pd);
+    if(ids.length===1&&SFV.drawing){
+      var q=sfInv(p.x,p.y);
+      var sz=profZAt(q.d); if(sz!=null&&q.z>sz) q.z=sz;   // 地表より上は押さえる
+      if(sfTryAppend(SFV,q.d,q.z,sfMinStep())) sfPaint();
+    }else if(ids.length===2&&SFV.pan0){
+      var a=SFV.pd[ids[0]], b=SFV.pd[ids[1]], o=SFV.pan0;
+      var l0=Math.max(8,Math.hypot(o.b.x-o.a.x,o.b.y-o.a.y));
+      var l1=Math.max(8,Math.hypot(b.x-a.x,b.y-a.y));
+      var s=o.s*l1/l0; if(s<SFV.smin)s=SFV.smin; if(s>SFV.smax)s=SFV.smax;
+      // ピンチ開始時の中点の下にあった地点が、いまの中点の下に来るように合わせる
+      var m0={x:(o.a.x+o.b.x)/2,y:(o.a.y+o.b.y)/2};
+      var m1={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+      var wd=o.cx+(m0.x-SFV.W/2)/o.s, wz=o.cy-(m0.y-SFV.H/2)/o.s;
+      SFV.s=s;
+      SFV.cx=wd-(m1.x-SFV.W/2)/s;
+      SFV.cy=wz+(m1.y-SFV.H/2)/s;
+      sfPaint(); }
+    e.preventDefault(); }
+  function sfUp(e){
+    if(!(e.pointerId in SFV.pd)) return;
+    var p=sfPointerXY(e); delete SFV.pd[e.pointerId];
+    if(SFV.drawing&&!Object.keys(SFV.pd).length){
+      SFV.drawing=false;
+      // 終点が ▲末端の近くなら吸着（向きに合うときだけ）
+      var sn=sfSnap(p.x,p.y), t=sfTail();
+      if(sn&&t&&sn===t&&SFV.pts.length){
+        var last=SFV.pts[SFV.pts.length-1];
+        if((t.d-last[0])*SFV.dir>0) SFV.pts.push([t.d,t.z]);
+        else SFV.pts[SFV.pts.length-1]=[t.d,t.z]; }
+      sfPaint(); }
+    SFV.pan0=null;
+    e.preventDefault(); }
   // 選択待ちのタップ。拾い方（hitStroke・16px）は v0.92 の線のタップ編集と同じ。
   function slipTap(px,py){ var bi=hitStroke(px,py,16);
     if(bi>=0){ slipPick(bi); return true; }
@@ -3792,18 +3975,10 @@
     var drag=false;
     c.addEventListener('pointerdown',function(e){ drag=true;
       try{ c.setPointerCapture&&c.setPointerCapture(e.pointerId); }catch(e2){}
-      // v0.96: すべり面の描画中は、カーソルでなく頂点を置く
-      if(SLIP.draw){ if(slipSfAdd(e.clientX,e.clientY)) paintProfile(); }
-      else profPick(e.clientX);
-      e.preventDefault(); e.stopPropagation(); },{passive:false});
+      profPick(e.clientX); e.preventDefault(); e.stopPropagation(); },{passive:false});
     c.addEventListener('pointermove',function(e){ if(!drag)return;
-      if(SLIP.draw){ if(slipSfAdd(e.clientX,e.clientY)) paintProfile(); }
-      else profPick(e.clientX);
-      e.preventDefault(); e.stopPropagation(); },{passive:false});
-    function up(e){ drag=false;
-      if(SLIP.draw){ var a=slipSfArr(); if(a&&a.length){ a.sort(function(p,q){ return p[0]-q[0]; }); }
-        PLAN=slipPlan(); paintProfile(); render(); }
-      e.stopPropagation(); }
+      profPick(e.clientX); e.preventDefault(); e.stopPropagation(); },{passive:false});
+    function up(e){ drag=false; e.stopPropagation(); }
     c.addEventListener('pointerup',up,{passive:true});
     c.addEventListener('pointercancel',up,{passive:true});
   })();
@@ -5479,9 +5654,21 @@
   document.getElementById('measProf').onclick=openProfile;
   // v0.95: ⛰ は「選択待ちにする」。すでに選んでいるときの再タップは選び直し。
   document.getElementById('measSlip').onclick=function(){ slipArm(); };
-  // v0.96: すべり面の描画の入切と、ペア色の標高ピッチ
+  // v0.97: ⛰ すべり面 は全画面の 1:1 スケッチを開く。ダブルタップで消去は据え置き。
   document.getElementById('profSf').onclick=function(){ slipSfToggle(); };
   document.getElementById('profSf').ondblclick=function(){ slipSfClear(); };
+  document.getElementById('sfOk').onclick=function(){ sfCommit(); };
+  document.getElementById('sfRedo').onclick=function(){ SFV.pts=[]; SFV.dir=0; sfPaint(); };
+  document.getElementById('sfClose').onclick=function(){ sfCloseView();
+    toast('中止しました（確定済みのすべり面はそのままです）'); };
+  (function(){ var c=document.getElementById('cvSf'); if(!c) return;
+    c.addEventListener('pointerdown',function(e){
+      try{ c.setPointerCapture&&c.setPointerCapture(e.pointerId); }catch(e2){}
+      sfDown(e); },{passive:false});
+    c.addEventListener('pointermove',sfMove,{passive:false});
+    c.addEventListener('pointerup',sfUp,{passive:false});
+    c.addEventListener('pointercancel',sfUp,{passive:false});
+    window.addEventListener('resize',function(){ if(SFV.open) sfPaint(); }); })();
   document.getElementById('slipPitch').onchange=function(){
     if(S.slip){ S.slip.pitch=+this.value||SLIP_PITCH; markDirty(); }
     PLAN=slipPlan(); paintProfile(); render(); };
@@ -7587,10 +7774,9 @@
     S.slip=(o.slip&&o.slip.blk!=null)?{blk:o.slip.blk,                      // v0.95
       sf:(o.slip.sf&&o.slip.sf.length)?o.slip.sf:[],                        // v0.96
       pitch:+o.slip.pitch||SLIP_PITCH}:null;
-    SLIP.draw=false; PLAN=[];
+    SLIP.resume=null; PLAN=[]; sfCloseView();   // v0.97 復元したらスケッチビューは畳む
     var spx=document.getElementById('slipPitch');
     if(spx) spx.value=String((S.slip&&S.slip.pitch)||SLIP_PITCH);
-    syncSfBtn();
     S.profEx=+o.profEx||0; S.profMark=null;
     if(o.dimH!=null) S.dimH=+o.dimH||0;                                   // v0.44
     if(o.dimArrow>0) S.dimArrow=+o.dimArrow;
