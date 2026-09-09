@@ -2448,7 +2448,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.04';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.05';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2861,7 +2861,7 @@
     // 十字）と混ざらないよう、形と色を分けている。書き出しには出さない。
     // v0.42: 測線（距離計測・断面の測線）。書き出しには出さない。
     if(!EXPORTING&&S.meas&&S.meas.pts.length){ drawMeasure(); }
-    if(!EXPORTING&&S.slip) drawSlip();   // v0.95 ブロック範囲線と交点（書き出しには出さない）
+    if(!EXPORTING&&S.slip&&SFV.open) drawSlip();   // v0.95 ブロック範囲線と交点（書き出しには出さない）。v1.05 分割ビューが開いている間だけ（閉じたら等高線は元の色）
     if(!EXPORTING&&S.profMark){ var pmp=w2s(S.profMark[0],S.profMark[1]);
       ctx.strokeStyle='#ffffff'; ctx.lineWidth=4;
       ctx.beginPath(); ctx.arc(pmp[0],pmp[1],8,0,7); ctx.stroke();
@@ -3333,6 +3333,9 @@
     S.meas.pts.pop(); if(!S.meas.pts.length)S.meas=null;
     S.profMark=null; updateMeasBar(); refreshProfile(); render(); }
   function measClear(){ S.meas=null; S.profMark=null;
+    // v1.05: 地すべり面モードも解除する。残すと新しい測線で PLAN が作り直され、直交線が勝手に出た（実機報告）。
+    // 確定した断面は sfArchive が図面枠外に作図として残しているので、ここで消えるのは選択と下書きだけ。
+    if(S.slip){ if(SFV.open) sfCloseView(); slipClear(); toast('測線を消しました。地すべり面モードも解除しました（確定した断面は図面枠外に残っています）'); }
     closeProfile(); updateMeasBar(); render(); }
   // 測線をそのまま作図の線にする（DXF / GeoPDF に出せるようになる）
   function measToStroke(){
@@ -3566,6 +3569,15 @@
   // 10m ほど伸びる**。交わらない側（開いた末端など）は見切りの長さに落とす。
   var SLIP_PITCH=20;        // ペア色を振る標高ピッチ[m]の既定（5 / 10 / 20 から選ぶ）
   var SLIP_PERP_EXT=10;     // ブロック範囲線の外へ伸びす長さ[m]
+  // v1.05 見た目（利用者指定）。E はもっと薄く、F は太く、範囲内のペア等高線は彩度を落として色付け
+  var SLIP_FADE=0.80;       // E: 範囲内の全等高線に重ねる白の不透明度（v0.98 は 0.62）
+  var SLIP_F_LW=3.6;        // F: 範囲外のペア標高の等高線の太さ（v0.98 は 2）
+  var SLIP_FIN_LW=2.6;      // 範囲内のペア標高の等高線の太さ
+  var SLIP_FIN_MIX=0.55;    // 範囲内のペア色を白へ寄せる割合（彩度を落とす）
+  function desatColor(hex,mix){ var m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex||''); if(!m) return hex;
+    var r=parseInt(m[1],16), g=parseInt(m[2],16), b=parseInt(m[3],16);
+    r=Math.round(r+(255-r)*mix); g=Math.round(g+(255-g)*mix); b=Math.round(b+(255-b)*mix);
+    return 'rgb('+r+','+g+','+b+')'; }
   var SLIP_PERP_FB=20;      // 範囲線と交わらない側の長さ[m]（見切り）
   var SLIP_SNAP_R=0.02;     // ▼▲ への吸着。測線長に対する割合
   // ペア色。6 色を標高の段で循回する（図の F と同じ色を D にも使う）。
@@ -3837,7 +3849,56 @@
               :'▼頭部から末端の方向へ描いてください（末端は開いています）')
             :'一筆書きで描いてください'); }
   function sfCloseView(){ SFV.open=false; SFV.drawing=false; SFV.pd={};
-    var v=document.getElementById('sfView'); if(v) v.classList.remove('open'); }
+    var v=document.getElementById('sfView'); if(v) v.classList.remove('open');
+    CLIP.sig=''; render(); }   // v1.05 閉じたら重ね描き（E/F/D）を消して等高線を元の色に戻す
+  // ---- v1.05 確定した断面を図面枠外に 1:1 の作図として残す ---------------------------
+  // 図面枠（world）。図郭付きラスタの 4 隅から。無ければ描いた線と測線の外接矩形。
+  function sfFrameBox(){ var pts=[], i, r=null;
+    for(i=0;i<S.rasters.length;i++){ var q=S.rasters[i]; if(q&&q.pgAff&&q.pageWpt&&q.pageHpt){ r=q; break; } }
+    if(r){ pts=[affApply(r.pgAff,0,0),affApply(r.pgAff,r.pageWpt,0),affApply(r.pgAff,r.pageWpt,r.pageHpt),affApply(r.pgAff,0,r.pageHpt)]; }
+    else { S.strokes.forEach(function(st){ if(st.sfg==null&&st.pts) st.pts.forEach(function(p){ pts.push(p); }); });
+      measPts().forEach(function(p){ pts.push(p); }); }
+    if(!pts.length) return null;
+    var x0=1e30,y0=1e30,x1=-1e30,y1=-1e30;
+    for(i=0;i<pts.length;i++){ if(pts[i][0]<x0)x0=pts[i][0]; if(pts[i][0]>x1)x1=pts[i][0]; if(pts[i][1]<y0)y0=pts[i][1]; if(pts[i][1]>y1)y1=pts[i][1]; }
+    return {x0:x0,y0:y0,x1:x1,y1:y1}; }
+  // 断面図の部品を作る（純関数・テストで実走行する）。origin は左上 [ox,oy]。1:1（X=距離 m・Y=標高 m）。
+  //   SM: 地形断面のサンプル [{d,z}]、sf: すべり面 [[d,z]…]、head/tail: ▼▲、lay: レイヤー、key: ブロック id、slot: 枡
+  function sfArchiveParts(SM,sf,head,tail,pitch,lay,key,slot,ox,oy,zhi){
+    var strokes=[], texts=[], i, len=SM.length?SM[SM.length-1].d:0;
+    var h=Math.min(5,Math.max(1,len*0.012));   // 文字の高さ[m]（1:1000 なら 1.2〜5mm）
+    function W(d,z){ return [ox+d, oy-(zhi-z)]; }
+    var gp=[]; for(i=0;i<SM.length;i++){ if(SM[i].z==null) continue; gp.push(W(SM[i].d,SM[i].z)); }
+    if(gp.length>1) strokes.push({layer:lay,pts:gp,dash:true,dashM:Math.max(1,h),sfg:key,sfslot:slot,sfk:'ground'});
+    if(sf&&sf.length>1){ var ss={layer:lay,pts:sf.map(function(p){ return W(p[0],p[1]); }),sfg:key,sfslot:slot,sfk:'sf'}; ss.lwm=2; strokes.push(ss); }   // 太さは寸法と同じ作法で代入（v0.92 の契約）
+    var lv=slipLevels(sf,pitch), k;
+    for(i=0;i<lv.length;i++){ var ds=sfCrossD(sf,lv[i]);
+      for(k=0;k<ds.length;k++){ var c=W(ds[k],lv[i]);
+        strokes.push({layer:lay,pts:[[c[0],c[1]-h*0.7],[c[0],c[1]+h*0.7]],sfg:key,sfslot:slot,sfk:'tick',sfz:lv[i]});
+        texts.push({layer:lay,x:c[0]+h*0.35,y:c[1]+h*0.35,t:String(lv[i]),h:h,sfg:key,sfslot:slot,sfk:'tick',sfz:lv[i]}); } }
+    if(head){ var hp=W(head.d,head.z); texts.push({layer:lay,x:hp[0]-h*0.5,y:hp[1]+h*1.6,t:'▼頭部 '+head.z.toFixed(1),h:h,sfg:key,sfslot:slot,sfk:'head'}); }
+    if(tail){ var tp=W(tail.d,tail.z); texts.push({layer:lay,x:tp[0]-h*0.5,y:tp[1]-h*2.2,t:'▲末端 '+tail.z.toFixed(1),h:h,sfg:key,sfslot:slot,sfk:'tail'}); }
+    texts.push({layer:lay,x:ox,y:oy+h*2.8,t:'すべり面断面 ブロック#'+key+'（1:1・標高ピッチ '+pitch+'m・測線 '+len.toFixed(0)+'m）',h:h*1.2,sfg:key,sfslot:slot,sfk:'title'});
+    return {strokes:strokes,texts:texts,h:h}; }
+  // 確定した sf を作図にする。同じブロックの前の図は置き換え、別ブロックは下の枡へ積む。
+  function sfArchive(){
+    var st=slipBlk(); if(!st||!S.slip||!S.slip.sf||S.slip.sf.length<2) return null;
+    var key=st.id, items=[], slot=-1, maxSlot=-1, i;
+    function sweep(arrName){ var arr=S[arrName];
+      for(i=arr.length-1;i>=0;i--){ var o=arr[i]; if(o.sfg==null) continue;
+        if(o.sfg===key){ if(o.sfslot!=null&&slot<0) slot=o.sfslot; arr.splice(i,1); items.push({op:'del',arr:arrName,obj:o,index:i}); }
+        else if(o.sfslot!=null&&o.sfslot>maxSlot) maxSlot=o.sfslot; } }
+    sweep('strokes'); sweep('texts');
+    if(slot<0) slot=maxSlot+1;
+    var box=sfFrameBox(); if(!box){ if(items.length) pushHist({op:'batch',items:items}); return null; }
+    var pst=PROF.st, zhi=pst.zmax, zlo=pst.zmin, len=pst.len;
+    var gap=Math.max(10,len*0.1), H=Math.max(1,zhi-zlo);
+    var ox=box.x1+gap, oy=box.y1-slot*(H+gap*1.5+Math.min(5,Math.max(1,len*0.012))*4);
+    var P=sfArchiveParts(PROF.SM,S.slip.sf,sfHead(),sfTail(),slipPitch(),S.layer,key,slot,ox,oy,zhi);
+    for(i=0;i<P.strokes.length;i++){ var s=P.strokes[i]; s.id=uid(); S.strokes.push(s); items.push({op:'add',arr:'strokes',id:s.id}); }
+    for(i=0;i<P.texts.length;i++){ var t=P.texts[i]; t.id=uid(); S.texts.push(t); items.push({op:'add',arr:'texts',id:t.id}); }
+    pushHist({op:'batch',items:items});
+    return {slot:slot,strokes:P.strokes.length,texts:P.texts.length,ox:ox,oy:oy}; }
   // ✔ 確定。下書きが無ければ何もしない（既存の sf を壊さない）。
   function sfCommit(){
     if(SFV.pts.length<2){ toast('まだ描いていません（一筆書きでなぞってから ✔）',true); return; }
@@ -3847,8 +3908,11 @@
     if(SFV.mode==='poly'){ SFV.pts=a.map(function(p){ return [p[0],p[1]]; }); SFV.sel=-1; sfSyncBar(); }   // v1.04 続けて直せる
     else { SFV.pts=[]; SFV.dir=0; }
     // v0.98: 確定してもビューは閉じない（モードの間は常に 1:1 断面を出しておく）
-    refreshProfile(true); sfPaint(); render();
-    toast('すべり面を確定しました。平面図に直交線を出しています（ピッチ '+slipPitch()+'m）'); }
+    refreshProfile(true);
+    var ar=sfArchive();   // v1.05 図面枠外に 1:1 の作図として残す（ブロックごとの枡）
+    sfPaint(); render();
+    toast('すべり面を確定しました。平面図に直交線を出しています（ピッチ '+slipPitch()+'m）'
+      +(ar?('。断面図を図面枠の右に作図しました（枡 '+(ar.slot+1)+'・線 '+ar.strokes+'・文字 '+ar.texts+'）'):'')); }
   // 描画。地形断面・▼▲・既存 sf（灰）・下書き（赤）・グリッドと目盛。
   // 下書きがピッチの倍数の標高を切る位置にはペア色の丸（確定するとここに直交線が出る）。
   function sfPaint(){
@@ -4020,8 +4084,8 @@
   function slipTap(px,py){ var bi=hitStroke(px,py,16);
     if(bi>=0){ slipPick(bi); return true; }
     toast('線の上をタップしてください（当たり判定 16px）',true); return false; }
-  function slipClear(){ S.slip=null; SLIP.cr=[]; SLIP.open=false; markDirty();
-    slipCancel(); refreshProfile(); render(); }
+  function slipClear(){ S.slip=null; SLIP.cr=[]; SLIP.open=false; PLAN=[]; CLIP.sig=''; CLIP.snaps=[]; markDirty();
+    slipCancel(); refreshProfile(); render(); }   // v1.05 measClear から呼ぶ（PLAN・切り分け・吸着先も捨てる）
   // 地図への重ね描き。書き出し（DXF / GeoPDF）には一切出さない（測線と同じ扱い）。
   // ---- 地形等高線（OCG）の読み込みと E・F（v0.98）----------------------
   // SPEC_ocg_receiving_notes_v0_96.md の 6 点に従う:
@@ -4029,7 +4093,7 @@
   //   ラベル欠落は線の欠落ではない・**表示中のページの中だけ**で集める・
   //   /Properties の無いページは読み飛ばす。
   var CONT={state:'idle',key:null,zmap:null,told:false};   // 読んだ等高線（world 座標）
-  var CLIP={sig:'',inside:[],pairs:[]};                     // 切り分けの結果（保存しない・§5.3）
+  var CLIP={sig:'',inside:[],pairs:[],pairsIn:[],snaps:[]};   // 切り分けの結果（保存しない・§5.3）。v1.05 pairsIn（範囲内のペア）・snaps（吸着点）
   // バックスラッシュを使わずに書く（§3.3。[0-9] と [.] で同じ意味）
   var RE_CONT=new RegExp('^TS_CONTOUR_(-?[0-9]+[.][0-9]{1,3})_(MAJOR|MINOR)$');
   function contInfo(groups){
@@ -4138,9 +4202,9 @@
     for(i=0;i<PLAN.length;i++){ if(!seen[PLAN[i].z]){ seen[PLAN[i].z]=1; lv.push(PLAN[i].z); } }
     var sig=slipClipSig(st,lv);
     if(sig===CLIP.sig) return;
-    CLIP={sig:sig,inside:[],pairs:[]};
+    CLIP={sig:sig,inside:[],pairs:[],pairsIn:[],snaps:[]};
     if(!st||!st.pts||st.pts.length<3||CONT.state!=='ok') return;
-    var BP=st.pts;
+    var BP=st.pts, segsB=polySegs(BP,!!st.closed);
     var bx0=1e30,by0=1e30,bx1=-1e30,by1=-1e30;
     for(i=0;i<BP.length;i++){ if(BP[i][0]<bx0)bx0=BP[i][0]; if(BP[i][0]>bx1)bx1=BP[i][0];
       if(BP[i][1]<by0)by0=BP[i][1]; if(BP[i][1]>by1)by1=BP[i][1]; }
@@ -4157,11 +4221,22 @@
         for(j=0;j<ins.length;j++) CLIP.inside.push(ins[j]); } }
     for(i=0;i<lv.length;i++){
       var zl=CONT.zmap[lv[i]]; if(!zl) continue;
-      var col=pairColor(lv[i]), pl={z:lv[i],col:col,lines:[]};
+      var col=pairColor(lv[i]), pl={z:lv[i],col:col,lines:[]}, pin={z:lv[i],col:desatColor(col,SLIP_FIN_MIX),lines:[]};
       for(k=0;k<zl.length;k++){
         var outs=polyClip(zl[k],BP,false), j2;
-        for(j2=0;j2<outs.length;j2++) pl.lines.push(outs[j2]); }
-      if(pl.lines.length) CLIP.pairs.push(pl); } }
+        for(j2=0;j2<outs.length;j2++) pl.lines.push(outs[j2]);
+        // v1.05: 範囲内のペア標高の等高線（彩度を落として色付け）
+        var ins2=polyClip(zl[k],BP,true);
+        for(j2=0;j2<ins2.length;j2++) pin.lines.push(ins2[j2]);
+        // v1.05: 等高線 × ブロック範囲線の交点（すべり面コンター線を描くときの吸着先）
+        var Lz=zl[k], s1, s2, mm;
+        for(s1=0;s1<Lz.length-1;s1++) for(s2=0;s2<segsB.length;s2++){
+          mm=segX(Lz[s1],Lz[s1+1],segsB[s2][0],segsB[s2][1]);
+          if(mm) CLIP.snaps.push({x:Lz[s1][0]+(Lz[s1+1][0]-Lz[s1][0])*mm.t,y:Lz[s1][1]+(Lz[s1+1][1]-Lz[s1][1])*mm.t,z:lv[i]}); } }
+      if(pl.lines.length) CLIP.pairs.push(pl);
+      if(pin.lines.length) CLIP.pairsIn.push(pin); }
+    // v1.05: 直交線と主測線の交点も吸着先（すべり面コンター線はここを通る）
+    for(i=0;i<PLAN.length;i++) CLIP.snaps.push({x:PLAN[i].x,y:PLAN[i].y,z:PLAN[i].z}); }
   function drawSlip(){
     var st=slipBlk(); if(!st||!st.pts||!st.pts.length) return;
     slipRecalc(); PLAN=slipPlan();
@@ -4170,26 +4245,40 @@
     // E: 範囲内の地形コンターを薄く（下地はラスタなので白の半透明を上塗りして薄める）
     var ci;
     ctx.setLineDash([]);
-    ctx.strokeStyle='rgba(255,255,255,.62)'; ctx.lineWidth=lw(2.4);
+    ctx.strokeStyle='rgba(255,255,255,'+SLIP_FADE+')'; ctx.lineWidth=lw(2.6);   // v1.05 もっと薄く（SLIP_FADE）
     for(ci=0;ci<CLIP.inside.length;ci++){ var IL=CLIP.inside[ci];
       ctx.beginPath();
       for(var cj=0;cj<IL.length;cj++){ var cp=w2s(IL[cj][0],IL[cj][1]);
         cj?ctx.lineTo(cp[0],cp[1]):ctx.moveTo(cp[0],cp[1]); }
       ctx.stroke(); }
-    // F・G: ペア標高の地形コンター（範囲外）を直交線と同じペア色で
+    // v1.05: 範囲内のペア標高の等高線を、彩度を落としたペア色で（E の上・F の下）
+    for(ci=0;ci<CLIP.pairsIn.length;ci++){ var PN=CLIP.pairsIn[ci];
+      ctx.strokeStyle=PN.col; ctx.lineWidth=lw(SLIP_FIN_LW);
+      for(var nk=0;nk<PN.lines.length;nk++){ var NL=PN.lines[nk];
+        ctx.beginPath();
+        for(var nj=0;nj<NL.length;nj++){ var np2=w2s(NL[nj][0],NL[nj][1]);
+          nj?ctx.lineTo(np2[0],np2[1]):ctx.moveTo(np2[0],np2[1]); }
+        ctx.stroke(); } }
+    // F・G: ペア標高の地形コンター（範囲外）を直交線と同じペア色で（v1.05 太く: SLIP_F_LW）
     for(ci=0;ci<CLIP.pairs.length;ci++){ var PL=CLIP.pairs[ci];
-      ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=lw(3.4);
+      ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=lw(SLIP_F_LW+1.6);
       for(var pk=0;pk<PL.lines.length;pk++){ var FL=PL.lines[pk];
         ctx.beginPath();
         for(var fj=0;fj<FL.length;fj++){ var fp=w2s(FL[fj][0],FL[fj][1]);
           fj?ctx.lineTo(fp[0],fp[1]):ctx.moveTo(fp[0],fp[1]); }
         ctx.stroke(); }
-      ctx.strokeStyle=PL.col; ctx.lineWidth=lw(2);
+      ctx.strokeStyle=PL.col; ctx.lineWidth=lw(SLIP_F_LW);
       for(pk=0;pk<PL.lines.length;pk++){ var FL2=PL.lines[pk];
         ctx.beginPath();
         for(fj=0;fj<FL2.length;fj++){ var fp2=w2s(FL2[fj][0],FL2[fj][1]);
           fj?ctx.lineTo(fp2[0],fp2[1]):ctx.moveTo(fp2[0],fp2[1]); }
         ctx.stroke(); } }
+    // v1.05: 吸着先（等高線 × 範囲線・直交線 × 主測線）を小さな菱形で見せる
+    for(ci=0;ci<CLIP.snaps.length;ci++){ var sn=CLIP.snaps[ci], spt=w2s(sn.x,sn.y);
+      ctx.fillStyle='rgba(255,255,255,.9)'; ctx.beginPath();
+      ctx.moveTo(spt[0],spt[1]-5); ctx.lineTo(spt[0]+5,spt[1]); ctx.lineTo(spt[0],spt[1]+5); ctx.lineTo(spt[0]-5,spt[1]); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=pairColor(sn.z); ctx.beginPath();
+      ctx.moveTo(spt[0],spt[1]-3); ctx.lineTo(spt[0]+3,spt[1]); ctx.lineTo(spt[0],spt[1]+3); ctx.lineTo(spt[0]-3,spt[1]); ctx.closePath(); ctx.fill(); }
     var sp=st.pts.map(function(q){ return w2s(q[0],q[1]); }), i;
     ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round'; ctx.setLineDash([]);
     ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=lw(5.4);
@@ -5044,6 +5133,11 @@
     if(!snapOn())return null;
     if(!S.V.scale||!isFinite(S.V.scale))return null;
     var thr=snapRadius()/S.V.scale, bd=thr, best=null, i, k;
+    // v1.05: 直交線が出ている間は、ペア標高の等高線 × ブロック範囲線の交点と、直交線 × 主測線の交点に吸着
+    //   （すべり面コンター線はこの 3 点を通る）。端点と同じ優先度。
+    if(SFV.open&&PLAN.length&&CLIP.snaps.length){
+      for(i=0;i<CLIP.snaps.length;i++){ var sq=CLIP.snaps[i], dq=Math.hypot(wx-sq.x,wy-sq.y);
+        if(dq<bd*SNAP_END_BIAS){ bd=dq; best={x:sq.x,y:sq.y,kind:'slip'}; } } }
     for(i=0;i<S.strokes.length;i++){ var st=S.strokes[i];
       if(exId!=null&&st.id===exId)continue;
       var L=LAYERS[st.layer]||LAYERS[0];
