@@ -873,14 +873,15 @@
       <option value="10">10 m</option>
       <option value="20" selected>20 m</option>
     </select>
-    <button class="fb" id="sfRedo">↺</button>
-    <button class="fb" id="sfClear">🗑</button>
+    <button class="fb" id="sfMode" title="描き方の切替（折れ線／一筆書き）">✎ 折れ線</button>
+    <button class="fb" id="sfDel" title="選んだ折れ点を消す" style="display:none">点を削除</button>
+    <button class="fb" id="sfRedo" title="一手戻す">↶</button>
+    <button class="fb" id="sfClear" title="すべり面を消す">🗑</button>
     <button class="fb primary" id="sfOk">✔ 確定</button>
     <button class="fb ghost" id="sfClose">✕</button>
   </div>
   <canvas id="cvSf"></canvas>
-  <div class="sfHint">▼頭部から ▲末端へ一筆書き。戻る動きは捨てます。描きなおすときはそのままもう一度なぞる。
-    2 本指で移動・ピンチで拡大（縦横比は 1:1 のまま）</div>
+  <div class="sfHint"><span id="sfHintTxt">▼と▲は自動。間をタップして折れ点を置く（順番は自由・距離の順に並ぶ）。点はドラッグで動かす・タップで選んで「点を削除」。1 本指で移動・ピンチで拡大</span></div>
 </div>
 <div id="photoView"><button class="ghost pv-close" id="pvClose">✕</button><img id="pvImg" alt=""><div class="cap" id="pvCap"></div><div class="tapHint">写真の外側をタップで閉じる</div></div>
 
@@ -2447,7 +2448,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.03';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.04';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3704,8 +3705,11 @@
   // 下側の細長いパネルでは 1:1 が収まらないので、全画面にして
   // **倍率だけ**をピンチで変えられるようにした（縦と横は常に同じ s [px/m]）。
   var SF_SNAP_PX=24;   // ▼▲ への吸着（画面 px）
+  var SF_VTX_PX=18;    // v1.04 折れ点の当たり（画面 px）
+  var SF_TAP_PX=8;     // v1.04 これ以下の動きは「タップ」（超えるとドラッグ／移動）
   var SFV={open:false,s:1,cx:0,cy:0,W:0,H:0,smin:0.1,smax:1000,
-           pts:[],dir:0,drawing:false,pd:{},pan0:null};
+           pts:[],dir:0,drawing:false,pd:{},pan0:null,
+           mode:'poly',sel:-1,drag:null,dragAnchor:-1,down0:null,moved:false,undo:[]};   // v1.04 折れ線モード
   function sfCanvas(){ return document.getElementById('cvSf'); }
   function sfLayout(){ var c=sfCanvas(); if(!c)return;
     var r=c.getBoundingClientRect();
@@ -3741,6 +3745,60 @@
     return null; }
   function sfMinStep(){ var st=PROF.st;
     return Math.max(0.05,((st&&st.len)||0)*0.002); }
+  // ---- v1.04 折れ線モード（既定）------------------------------------------
+  // ▼▲ は固定点（ブロック範囲で決まる）。座標が一致する点を固定点とみなす。
+  function sfIsAnchor(p){ var h=sfHead(), t=sfTail(); if(!p) return false;
+    return !!((h&&p[0]===h.d&&p[1]===h.z)||(t&&p[0]===t.d&&p[1]===t.z)); }
+  // 下書きの初期値。確定済みの sf があればそれ（編集用）、無ければ ▼ と ▲ だけ。d の昇順。
+  function sfPolyInit(sf,head,tail){ var pts=[];
+    if(sf&&sf.length>=2){ pts=sf.map(function(p){ return [p[0],p[1]]; }); }
+    else { if(head) pts.push([head.d,head.z]); if(tail) pts.push([tail.d,tail.z]); }
+    pts.sort(function(p,q){ return p[0]-q[0]; }); return pts; }
+  // 折れ点を追加。d は ▼▲ の間で、既存の点から minStep 以上離れていること。
+  // d の順に差し込む（タップの順番に依らない）。地表より上は地表に押さえる。返り値: 差し込んだ位置（不可なら -1）
+  function sfPolyInsert(pts,d,z,head,tail,minStep,groundZ){
+    var lo=head?head.d:-Infinity, hi=tail?tail.d:Infinity;
+    if(lo>hi){ var tmp=lo; lo=hi; hi=tmp; }
+    if(d<=lo+minStep||d>=hi-minStep) return -1;
+    if(groundZ!=null&&z>groundZ) z=groundZ;
+    var i=0; while(i<pts.length&&pts[i][0]<d) i++;
+    if(i<pts.length&&Math.abs(pts[i][0]-d)<minStep) return -1;
+    if(i>0&&Math.abs(pts[i-1][0]-d)<minStep) return -1;
+    pts.splice(i,0,[d,z]); return i; }
+  // 折れ点を動かす。d は隣の点の間に留める（順番が入れ替わらない）。▼▲ は動かない。
+  function sfPolyMoveTo(pts,i,d,z,minStep,groundZ){
+    if(i<0||i>=pts.length||sfIsAnchor(pts[i])) return false;
+    var lo=(i>0)?pts[i-1][0]+minStep:-Infinity, hi=(i<pts.length-1)?pts[i+1][0]-minStep:Infinity;
+    if(lo>hi){ lo=hi=(lo+hi)/2; }
+    if(d<lo) d=lo; if(d>hi) d=hi;
+    if(groundZ!=null&&z>groundZ) z=groundZ;
+    pts[i]=[d,z]; return true; }
+  // 画面 px で一番近い折れ点（当たり SF_VTX_PX）。無ければ -1。
+  function sfHitVertex(px,py){ var best=-1, bd=SF_VTX_PX, i, dd;
+    for(i=0;i<SFV.pts.length;i++){ dd=Math.hypot(sfX(SFV.pts[i][0])-px,sfY(SFV.pts[i][1])-py);
+      if(dd<=bd){ bd=dd; best=i; } }
+    return best; }
+  // ↶ 用の控え（点の追加・移動・削除・一筆書きの描き直しの前に取る）
+  function sfSnapshot(){ SFV.undo.push(SFV.pts.map(function(p){ return [p[0],p[1]]; }));
+    if(SFV.undo.length>50) SFV.undo.shift(); }
+  function sfUndo(){ if(!SFV.undo.length){ toast('戻す操作がありません'); return; }
+    SFV.pts=SFV.undo.pop(); SFV.sel=-1; SFV.dir=0; sfSyncBar(); sfPaint(); }
+  function sfDelSel(){ if(SFV.sel<0||SFV.sel>=SFV.pts.length) return;
+    if(sfIsAnchor(SFV.pts[SFV.sel])){ toast('▼▲ は消せません（ブロック範囲で決まる固定点です）',true); return; }
+    sfSnapshot(); SFV.pts.splice(SFV.sel,1); SFV.sel=-1; sfSyncBar(); sfPaint(); }
+  // モード切替。折れ線は ▼▲（か確定済み sf）から始める。一筆書きは空から。
+  function sfSetMode(m){ SFV.mode=(m==='free')?'free':'poly'; SFV.sel=-1; SFV.drawing=false; SFV.drag=null; SFV.down0=null;
+    if(SFV.mode==='poly') SFV.pts=sfPolyInit((S.slip&&S.slip.sf)||[],sfHead(),sfTail());
+    else { SFV.pts=[]; SFV.dir=0; }
+    sfSyncBar(); sfPaint(); }
+  // sfBar の表示（モードのボタン・「点を削除」の出し入れ・ヒント）
+  function sfSyncBar(){ var b=document.getElementById('sfMode'), d=document.getElementById('sfDel'), h=document.getElementById('sfHintTxt');
+    var poly=(SFV.mode==='poly');
+    if(b) b.textContent=poly?'✎ 折れ線':'✍ 一筆';
+    if(d) d.style.display=(poly&&SFV.sel>=0&&SFV.sel<SFV.pts.length&&!sfIsAnchor(SFV.pts[SFV.sel]))?'':'none';
+    if(h) h.textContent=poly
+      ?'▼と▲は自動。間をタップして折れ点を置く（順番は自由・距離の順に並ぶ）。点はドラッグで動かす・タップで選んで「点を削除」。1 本指で移動・ピンチで拡大'
+      :'▼頭部から ▲末端へ一筆書き。戻る動きは捨てます。描きなおすときはそのままもう一度なぞる。2 本指で移動・ピンチで拡大（縦横比は 1:1 のまま）'; }
   // 向き。横持ち＝右側（side）・縦持ち＝下側（bottom）。平面図は残りに見える。
   function sfOrient(w,h){ return (w>h)?'side':'bottom'; }
   function sfApplyOrient(){ var v=document.getElementById('sfView'); if(!v) return;
@@ -3767,9 +3825,15 @@
     SFV.s=f.s; SFV.cx=f.cx; SFV.cy=f.cy;
     SFV.smin=f.s*0.3; SFV.smax=Math.max(f.s*60,f.s+1);
     SFV.pts=[]; SFV.dir=0; SFV.drawing=false; SFV.pd={}; SFV.pan0=null;
-    sfPaint();
+    SFV.undo=[]; SFV.sel=-1; SFV.drag=null; SFV.down0=null;
+    sfSetMode(SFV.mode||'poly');   // v1.04 既定は折れ線（▼▲ が置かれた状態で始まる）
     var h=sfHead(), t=sfTail();
-    toast(h?(t?'▼頭部から ▲末端へ一筆書きで描いてください'
+    if(SFV.mode==='poly'){
+      var edit=(S.slip&&S.slip.sf&&S.slip.sf.length>=2);
+      toast(edit?'確定済みのすべり面を読み込みました。点をドラッグして直せます'
+                :(t?'▼と▲の間をタップして折れ点を置いてください（ドラッグで直せます）'
+                   :'▼から末端の方向へタップして折れ点を置いてください（末端は開いています）')); }
+    else toast(h?(t?'▼頭部から ▲末端へ一筆書きで描いてください'
               :'▼頭部から末端の方向へ描いてください（末端は開いています）')
             :'一筆書きで描いてください'); }
   function sfCloseView(){ SFV.open=false; SFV.drawing=false; SFV.pd={};
@@ -3779,7 +3843,9 @@
     if(SFV.pts.length<2){ toast('まだ描いていません（一筆書きでなぞってから ✔）',true); return; }
     var a=SFV.pts.slice();
     a.sort(function(p,q){ return p[0]-q[0]; });   // dir=-1 で描いても d の昇順で持つ
-    S.slip.sf=a; SFV.pts=[]; SFV.dir=0; markDirty();
+    S.slip.sf=a; markDirty();
+    if(SFV.mode==='poly'){ SFV.pts=a.map(function(p){ return [p[0],p[1]]; }); SFV.sel=-1; sfSyncBar(); }   // v1.04 続けて直せる
+    else { SFV.pts=[]; SFV.dir=0; }
     // v0.98: 確定してもビューは閉じない（モードの間は常に 1:1 断面を出しておく）
     refreshProfile(true); sfPaint(); render();
     toast('すべり面を確定しました。平面図に直交線を出しています（ピッチ '+slipPitch()+'m）'); }
@@ -3834,6 +3900,9 @@
                                  :g.moveTo(sfX(sf[i][0]),sfY(sf[i][1])); }
       g.stroke(); g.setLineDash([]); }
     // 下書き（赤）と、ピッチの倍数の標高を切る位置のペア色の丸
+    if(SFV.mode==='poly'&&SFV.pts.length===1&&sfTail()){   // v1.04 ▼ だけのとき: ▲ への案内（点線）
+      var t0=sfTail(); g.strokeStyle='rgba(255,107,107,.35)'; g.lineWidth=1.5; g.setLineDash([4,6]);
+      g.beginPath(); g.moveTo(sfX(SFV.pts[0][0]),sfY(SFV.pts[0][1])); g.lineTo(sfX(t0.d),sfY(t0.z)); g.stroke(); g.setLineDash([]); }
     if(SFV.pts.length>1){
       g.strokeStyle='#ff6b6b'; g.lineWidth=2.5;
       g.beginPath();
@@ -3845,6 +3914,16 @@
       for(i=0;i<lv.length;i++){ var ds=sfCrossD(srt,lv[i]);
         for(k=0;k<ds.length;k++){ g.fillStyle=pairColor(lv[i]);
           g.beginPath(); g.arc(sfX(ds[k]),sfY(lv[i]),4.5,0,7); g.fill(); } } }
+    // v1.04 折れ線モード: 折れ点（白丸・赤縁）。選択中は大きく黄縁。▼▲ は固定点なので描かない（三角がある）。
+    if(SFV.mode==='poly'){
+      for(i=0;i<SFV.pts.length;i++){ var vp=SFV.pts[i]; if(sfIsAnchor(vp)) continue;
+        var vx=sfX(vp[0]), vy=sfY(vp[1]), selv=(i===SFV.sel);
+        g.beginPath(); g.arc(vx,vy,selv?10:7,0,7);
+        g.fillStyle=selv?'rgba(255,224,102,.95)':'#fff'; g.fill();
+        g.strokeStyle=selv?'#ffb400':'#ff6b6b'; g.lineWidth=selv?3:2.2; g.stroke();
+        if(selv||(SFV.drag&&SFV.drag.i===i)){   // 選択中／ドラッグ中は座標を出す
+          g.fillStyle='rgba(230,238,246,.95)'; g.font='12px ui-monospace,monospace';
+          g.fillText(vp[0].toFixed(1)+'m / '+vp[1].toFixed(1)+'m',vx+14,vy-10); } } }
     // 左上の読み: 倍率と頭部・末端の標高
     g.fillStyle='rgba(230,238,246,.9)'; g.font='12px ui-monospace,monospace';
     var t1='1m = '+SFV.s.toFixed(2)+'px（縦横 1:1）';
@@ -3856,7 +3935,15 @@
   function sfDown(e){
     var p=sfPointerXY(e); SFV.pd[e.pointerId]=p;
     var ids=Object.keys(SFV.pd);
-    if(ids.length===1){
+    if(ids.length===1&&SFV.mode==='poly'){
+      // v1.04 折れ線: 点の上なら掴む（↶ 用に控える）。空きなら up で「タップ＝置く」か「移動」かを決める
+      SFV.down0={x:p.x,y:p.y,cx:SFV.cx,cy:SFV.cy}; SFV.moved=false;
+      var vi=sfHitVertex(p.x,p.y);
+      SFV.dragAnchor=(vi>=0&&sfIsAnchor(SFV.pts[vi]))?vi:-1;
+      SFV.drag=(vi>=0&&SFV.dragAnchor<0)?{i:vi}:null;
+      if(SFV.drag) sfSnapshot();
+    }else if(ids.length===1){
+      if(SFV.pts.length) sfSnapshot();   // v1.04 描き直しも ↶ で戻せる
       SFV.drawing=true; SFV.pts=[]; SFV.dir=0;
       var h=sfHead(), t=sfTail();
       if(h&&t) SFV.dir=(t.d>h.d)?1:-1;              // 頭部→末端の向きに固定
@@ -3864,8 +3951,10 @@
       if(!sn){ var sz=profZAt(q.d); if(sz!=null&&q.z>sz) q.z=sz; }
       SFV.pts.push([q.d,q.z]);
     }else if(ids.length===2){
-      // 2 本目が置かれたら下書きは捨てて移動・拡大に入る
-      SFV.drawing=false; SFV.pts=[];
+      // 2 本目が置かれたら移動・拡大に入る。一筆書きは下書きを捨てる（描いている最中だから）。
+      // 折れ線は下書きを残し、掴んでいた点があれば元に戻す（v1.04）
+      if(SFV.mode==='poly'){ if(SFV.drag&&SFV.undo.length){ SFV.pts=SFV.undo.pop(); } SFV.drag=null; SFV.down0=null; SFV.dragAnchor=-1; }
+      else { SFV.drawing=false; SFV.pts=[]; }
       var a=SFV.pd[ids[0]], b=SFV.pd[ids[1]];
       SFV.pan0={s:SFV.s,cx:SFV.cx,cy:SFV.cy,a:{x:a.x,y:a.y},b:{x:b.x,y:b.y}};
     }
@@ -3874,7 +3963,15 @@
     if(!(e.pointerId in SFV.pd)) return;
     var p=sfPointerXY(e); SFV.pd[e.pointerId]=p;
     var ids=Object.keys(SFV.pd);
-    if(ids.length===1&&SFV.drawing){
+    if(ids.length===1&&SFV.mode==='poly'&&SFV.down0){
+      // v1.04 折れ線: 掴んだ点を動かす／空きを引きずれば移動
+      var mdx=p.x-SFV.down0.x, mdy=p.y-SFV.down0.y;
+      if(!SFV.moved&&Math.hypot(mdx,mdy)>SF_TAP_PX) SFV.moved=true;
+      if(SFV.drag&&SFV.moved){ var q2=sfInv(p.x,p.y);
+        sfPolyMoveTo(SFV.pts,SFV.drag.i,q2.d,q2.z,sfMinStep(),profZAt(q2.d)); sfPaint(); }
+      else if(!SFV.drag&&SFV.dragAnchor<0&&SFV.moved){
+        SFV.cx=SFV.down0.cx-mdx/SFV.s; SFV.cy=SFV.down0.cy+mdy/SFV.s; sfPaint(); }
+    }else if(ids.length===1&&SFV.drawing){
       var q=sfInv(p.x,p.y);
       var sz=profZAt(q.d); if(sz!=null&&q.z>sz) q.z=sz;   // 地表より上は押さえる
       if(sfTryAppend(SFV,q.d,q.z,sfMinStep())) sfPaint();
@@ -3895,7 +3992,20 @@
   function sfUp(e){
     if(!(e.pointerId in SFV.pd)) return;
     var p=sfPointerXY(e); delete SFV.pd[e.pointerId];
-    if(SFV.drawing&&!Object.keys(SFV.pd).length){
+    if(SFV.mode==='poly'&&SFV.down0&&!Object.keys(SFV.pd).length){
+      // v1.04 折れ線: タップ＝点を置く／点の上のタップ＝選択の切替／ドラッグ終了＝その点を選択
+      if(SFV.drag){ var di=SFV.drag.i;
+        if(!SFV.moved){ if(SFV.undo.length) SFV.undo.pop(); SFV.sel=(SFV.sel===di)?-1:di; }
+        else SFV.sel=di;
+        SFV.drag=null; }
+      else if(!SFV.moved){
+        if(SFV.dragAnchor>=0){ toast('▼▲ はブロック範囲で決まる固定点です（動かせません）'); }
+        else { var q3=sfInv(p.x,p.y); sfSnapshot();
+          var ins=sfPolyInsert(SFV.pts,q3.d,q3.z,sfHead(),sfTail(),sfMinStep(),profZAt(q3.d));
+          if(ins<0){ SFV.undo.pop(); toast('折れ点は ▼ と ▲ の間に、離して置いてください',true); }
+          else SFV.sel=ins; } }
+      SFV.down0=null; SFV.dragAnchor=-1; sfSyncBar(); sfPaint(); }
+    else if(SFV.drawing&&!Object.keys(SFV.pd).length){
       SFV.drawing=false;
       // 終点が ▲末端の近くなら吸着（向きに合うときだけ）
       var sn=sfSnap(p.x,p.y), t=sfTail();
@@ -5969,8 +6079,11 @@
   // v0.97: ⛰ すべり面 は全画面の 1:1 スケッチを開く。ダブルタップで消去は据え置き。
   document.getElementById('sfOk').onclick=function(){ sfCommit(); };
   document.getElementById('sfClear').onclick=function(){ SFV.pts=[]; SFV.dir=0;
-    slipSfClear(); sfPaint(); };
-  document.getElementById('sfRedo').onclick=function(){ SFV.pts=[]; SFV.dir=0; sfPaint(); };
+    slipSfClear(); SFV.undo=[]; sfSetMode(SFV.mode); };   // v1.04 折れ線なら ▼▲ から始め直す
+  document.getElementById('sfRedo').onclick=function(){ sfUndo(); };   // v1.04 ↶ 一手戻す
+  document.getElementById('sfMode').onclick=function(){ var m=(SFV.mode==='poly')?'free':'poly';
+    sfSetMode(m); toast(m==='poly'?'折れ線: ▼と▲の間をタップして折れ点を置く（ドラッグで直せる）':'一筆書き: ▼から▲へペンでなぞる'); };
+  document.getElementById('sfDel').onclick=function(){ sfDelSel(); };
   document.getElementById('sfClose').onclick=function(){ sfCloseView();
     toast('中止しました（確定済みのすべり面はそのままです）'); };
   (function(){ var c=document.getElementById('cvSf'); if(!c) return;
@@ -7126,8 +7239,10 @@
       // 対応前の読み手でも、髭の無い線としてそのまま取り込める。
       var tk=s.tick?('/TSTick['+fp(s.tickP||TICK_P,3)+' '+fp(s.tickL||TICK_L,3)+']'):'';
       if(s.closed) pline(s.pts,col,true,s.hatch?'hatch':null,db,tk); else ink([s.pts],col,db,dimKeys(s)+tk); });   // 閉じた線は Polygon 注釈・ハッチは /Subj(hatch)・点線は /BS の破線指定（v0.29.1）
-    // v1.03: 複数の線で囲まれた領域のハッチ。線を伴わない Polygon 注釈 /Subj(hatch)（輪郭は元の線が別に出る）
-    (S.hatches||[]).forEach(function(h){ if(h.pts.length<3)return; col=hexRgb01((LAYERS[h.layer]||LAYERS[0]).color); pline(h.pts,col,true,'hatch',null,''); });
+    // v1.03: 複数の線で囲まれた領域のハッチ。線を伴わない Polygon 注釈（輪郭は元の線が別に出る）。
+    // v1.04: /Subj(fill) にした（プラグイン開発者の回答 REPLY_to_TerrainSketch_hatch_region_v1_03 第 1 案）。
+    //   読み手は fill を「塗りだけ」と解釈して輪郭カーブを出さない。従来型（線 1 本のハッチ）は hatch のまま。
+    (S.hatches||[]).forEach(function(h){ if(h.pts.length<3)return; col=hexRgb01((LAYERS[h.layer]||LAYERS[0]).color); pline(h.pts,col,true,'fill',null,''); });
     S.texts.forEach(function(t){ if(!t.t)return; col=hexRgb01((LAYERS[t.layer]||LAYERS[0]).color);
       var rt=t.rot||0, ux=Math.cos(rt), uy=Math.sin(rt), vx=-uy, vy=ux;   // v0.44
       var tp=w2p(t.x,t.y);   // v0.73: タッチポイント（ページ座標・MediaBox 左下原点）→ Reader の Text In-View 基点
