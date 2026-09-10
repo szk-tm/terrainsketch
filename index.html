@@ -2448,7 +2448,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.06';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.07';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3874,39 +3874,51 @@
   // 断面図の部品を作る（純関数・テストで実走行する）。origin [ox,oy] はグリッドの**左上（d=0, z=zTop）**。1:1（X=距離 m・Y=標高 m）。
   //   SM: 地形断面のサンプル [{d,z}]、sf: すべり面 [[d,z]…]、head/tail: ▼▲、lay: レイヤー、key: ブロック id、slot: 枡、
   //   zlo/zhi: 地形断面の標高範囲（グリッドの範囲を決める）
+  // v1.07 役割ごとのレイヤー。名前で探し、無ければ足す（パレットには入れない）。DXF ではこの名前のレイヤーに出る。
+  function sfLayer(name,color,aci,label){ var i;
+    for(i=0;i<LAYERS.length;i++) if(LAYERS[i].name===name) return i;
+    LAYERS.push({name:name,color:color,aci:aci,vis:true,added:true,label:label}); return LAYERS.length-1; }
+  function sfLayers(){ return {
+    gridm:sfLayer('SF_GRID_MINOR','#c9c9c9',9,'断面グリッド（細）'),
+    grid:sfLayer('SF_GRID','#6f6f6f',8,'断面グリッド（太）'),
+    text:sfLayer('SF_TEXT','#2b2b2b',250,'断面の文字'),
+    ground:sfLayer('RM_BROWN','#8a5a2b',33,'茶'),
+    sf:sfLayer('RM_RED','#e5484d',1,'赤') }; }
+  // lay: レイヤーの役割表 {gridm,grid,text,ground,sf}（v1.07。数値 1 つなら全部その色＝v1.06 までの呼び方）
   function sfArchiveParts(SM,sf,head,tail,pitch,lay,key,slot,ox,oy,zlo,zhi){
     var strokes=[], texts=[], i, k, len=SM.length?SM[SM.length-1].d:0;
+    var LY=(typeof lay==='object'&&lay)?lay:{gridm:lay,grid:lay,text:lay,ground:lay,sf:lay};
     var h=sfTextH(len), G=sfGridBox(len,zlo,zhi), zTop=G.zTop;
     function W(d,z){ return [ox+d, oy-(zTop-z)]; }
     function thin(st){ st.lwm=0.5; return st; }   // 太さは代入で（v0.92 の契約: 利用者の線に lwm は入らない）
     // --- グリッド（v1.06）: 副線（細）→ 主線 → 枠 の順（あとに描く線が上に載る）
     var d, z;
     for(d=0;d<=G.dEnd+1e-9;d+=G.m){ if(Math.abs(d/G.M-Math.round(d/G.M))<1e-9) continue;
-      strokes.push(thin({layer:lay,pts:[W(d,G.zBot),W(d,zTop)],sfg:key,sfslot:slot,sfk:'gridm'})); }
+      strokes.push(thin({layer:LY.gridm,pts:[W(d,G.zBot),W(d,zTop)],sfg:key,sfslot:slot,sfk:'gridm'})); }
     for(z=G.zBot;z<=zTop+1e-9;z+=G.m){ if(Math.abs(z/G.M-Math.round(z/G.M))<1e-9) continue;
-      strokes.push(thin({layer:lay,pts:[W(0,z),W(G.dEnd,z)],sfg:key,sfslot:slot,sfk:'gridm'})); }
-    for(d=G.M;d<G.dEnd-1e-9;d+=G.M) strokes.push({layer:lay,pts:[W(d,G.zBot),W(d,zTop)],sfg:key,sfslot:slot,sfk:'grid'});
-    for(z=G.zBot+G.M;z<zTop-1e-9;z+=G.M) strokes.push({layer:lay,pts:[W(0,z),W(G.dEnd,z)],sfg:key,sfslot:slot,sfk:'grid'});
-    strokes.push({layer:lay,pts:[W(0,G.zBot),W(G.dEnd,G.zBot),W(G.dEnd,zTop),W(0,zTop)],closed:true,sfg:key,sfslot:slot,sfk:'frame'});
+      strokes.push(thin({layer:LY.gridm,pts:[W(0,z),W(G.dEnd,z)],sfg:key,sfslot:slot,sfk:'gridm'})); }
+    for(d=G.M;d<G.dEnd-1e-9;d+=G.M) strokes.push({layer:LY.grid,pts:[W(d,G.zBot),W(d,zTop)],sfg:key,sfslot:slot,sfk:'grid'});
+    for(z=G.zBot+G.M;z<zTop-1e-9;z+=G.M) strokes.push({layer:LY.grid,pts:[W(0,z),W(G.dEnd,z)],sfg:key,sfslot:slot,sfk:'grid'});
+    strokes.push({layer:LY.grid,pts:[W(0,G.zBot),W(G.dEnd,G.zBot),W(G.dEnd,zTop),W(0,zTop)],closed:true,sfg:key,sfslot:slot,sfk:'frame'});
     // --- 軸ラベル: 左に EL.、下に距離。題は縦横それぞれ
     for(z=G.zBot;z<=zTop+1e-9;z+=G.M){ var lz=W(0,z);
-      texts.push({layer:lay,x:lz[0]-h*(String(Math.round(z)).length+3)*0.6-h*0.5,y:lz[1]-h*0.45,t:'EL.'+Math.round(z),h:h,sfg:key,sfslot:slot,sfk:'ellab',sfz:z}); }
+      texts.push({layer:LY.text,x:lz[0]-h*(String(Math.round(z)).length+3)*0.6-h*0.5,y:lz[1]-h*0.45,t:'EL.'+Math.round(z),h:h,sfg:key,sfslot:slot,sfk:'ellab',sfz:z}); }
     for(d=0;d<=G.dEnd+1e-9;d+=G.M){ var ld=W(d,G.zBot);
-      texts.push({layer:lay,x:ld[0]-h*String(Math.round(d)).length*0.3,y:ld[1]-h*1.6,t:String(Math.round(d)),h:h,sfg:key,sfslot:slot,sfk:'dlab'}); }
+      texts.push({layer:LY.text,x:ld[0]-h*String(Math.round(d)).length*0.3,y:ld[1]-h*1.6,t:String(Math.round(d)),h:h,sfg:key,sfslot:slot,sfk:'dlab'}); }
     var ax=W(G.dEnd/2,G.zBot), ay=W(0,(G.zBot+zTop)/2);
-    texts.push({layer:lay,x:ax[0]-h*2,y:ax[1]-h*3.4,t:'距離 (m)',h:h,sfg:key,sfslot:slot,sfk:'dtitle'});
-    texts.push({layer:lay,x:ay[0]-h*7.5,y:ay[1]-h*2,t:'標高 (m)',h:h,rot:90,sfg:key,sfslot:slot,sfk:'ztitle'});
+    texts.push({layer:LY.text,x:ax[0]-h*2,y:ax[1]-h*3.4,t:'距離 (m)',h:h,sfg:key,sfslot:slot,sfk:'dtitle'});
+    texts.push({layer:LY.text,x:ay[0]-h*7.5,y:ay[1]-h*2,t:'標高 (m)',h:h,rot:90,sfg:key,sfslot:slot,sfk:'ztitle'});
     // --- 地形断面（破線）・すべり面（太め）・ピッチの目印（標高値の文字は v1.06 で出さない＝グリッドで読める）
     var gp=[]; for(i=0;i<SM.length;i++){ if(SM[i].z==null) continue; gp.push(W(SM[i].d,SM[i].z)); }
-    if(gp.length>1) strokes.push({layer:lay,pts:gp,dash:true,dashM:Math.max(1,h),sfg:key,sfslot:slot,sfk:'ground'});
-    if(sf&&sf.length>1){ var ss={layer:lay,pts:sf.map(function(p){ return W(p[0],p[1]); }),sfg:key,sfslot:slot,sfk:'sf'}; ss.lwm=2; strokes.push(ss); }
+    if(gp.length>1) strokes.push({layer:LY.ground,pts:gp,dash:true,dashM:Math.max(1,h),sfg:key,sfslot:slot,sfk:'ground'});   // 茶（v1.07）
+    if(sf&&sf.length>1){ var ss={layer:LY.sf,pts:sf.map(function(p){ return W(p[0],p[1]); }),sfg:key,sfslot:slot,sfk:'sf'}; ss.lwm=2; strokes.push(ss); }   // 赤（v1.07）
     var lv=slipLevels(sf,pitch);
     for(i=0;i<lv.length;i++){ var ds=sfCrossD(sf,lv[i]);
       for(k=0;k<ds.length;k++){ var c=W(ds[k],lv[i]);
-        strokes.push({layer:lay,pts:[[c[0],c[1]-h*0.7],[c[0],c[1]+h*0.7]],sfg:key,sfslot:slot,sfk:'tick',sfz:lv[i]}); } }
-    if(head){ var hp=W(head.d,head.z); texts.push({layer:lay,x:hp[0]-h*0.5,y:hp[1]+h*1.6,t:'▼頭部 '+head.z.toFixed(1),h:h,sfg:key,sfslot:slot,sfk:'head'}); }
-    if(tail){ var tp=W(tail.d,tail.z); texts.push({layer:lay,x:tp[0]-h*0.5,y:tp[1]-h*2.2,t:'▲末端 '+tail.z.toFixed(1),h:h,sfg:key,sfslot:slot,sfk:'tail'}); }
-    texts.push({layer:lay,x:ox,y:oy+h*1.4,t:'すべり面断面 ブロック#'+key+'（1:1・標高ピッチ '+pitch+'m・測線 '+len.toFixed(0)+'m・グリッド '+G.M+'m/'+G.m+'m）',h:h*1.2,sfg:key,sfslot:slot,sfk:'title'});
+        strokes.push({layer:LY.sf,pts:[[c[0],c[1]-h*0.7],[c[0],c[1]+h*0.7]],sfg:key,sfslot:slot,sfk:'tick',sfz:lv[i]}); } }
+    if(head){ var hp=W(head.d,head.z); texts.push({layer:LY.text,x:hp[0]-h*0.5,y:hp[1]+h*1.6,t:'▼頭部 '+head.z.toFixed(1),h:h,sfg:key,sfslot:slot,sfk:'head'}); }
+    if(tail){ var tp=W(tail.d,tail.z); texts.push({layer:LY.text,x:tp[0]-h*0.5,y:tp[1]-h*2.2,t:'▲末端 '+tail.z.toFixed(1),h:h,sfg:key,sfslot:slot,sfk:'tail'}); }
+    texts.push({layer:LY.text,x:ox,y:oy+h*1.4,t:'すべり面断面 ブロック#'+key+'（1:1・標高ピッチ '+pitch+'m・測線 '+len.toFixed(0)+'m・グリッド '+G.M+'m/'+G.m+'m）',h:h*1.2,sfg:key,sfslot:slot,sfk:'title'});
     return {strokes:strokes,texts:texts,h:h,grid:G}; }
   // 確定した sf を作図にする。同じブロックの前の図は置き換え、別ブロックは下の枡へ積む。
   function sfArchive(){
@@ -3923,7 +3935,7 @@
     var G=sfGridBox(len,zlo,zhi), h=sfTextH(len);   // v1.06 枡の高さはグリッドの高さ＋ラベルの余白
     var gap=Math.max(10,len*0.1), H=Math.max(1,G.zTop-G.zBot)+h*8;
     var ox=box.x1+gap+h*8, oy=box.y1-slot*(H+gap*1.5);   // 左に EL. ラベルの幅ぶん寄せる
-    var P=sfArchiveParts(PROF.SM,S.slip.sf,sfHead(),sfTail(),slipPitch(),S.layer,key,slot,ox,oy,zlo,zhi);
+    var P=sfArchiveParts(PROF.SM,S.slip.sf,sfHead(),sfTail(),slipPitch(),sfLayers(),key,slot,ox,oy,zlo,zhi);   // v1.07 役割ごとのレイヤー
     for(i=0;i<P.strokes.length;i++){ var s=P.strokes[i]; s.id=uid(); S.strokes.push(s); items.push({op:'add',arr:'strokes',id:s.id}); }
     for(i=0;i<P.texts.length;i++){ var t=P.texts[i]; t.id=uid(); S.texts.push(t); items.push({op:'add',arr:'texts',id:t.id}); }
     pushHist({op:'batch',items:items});
