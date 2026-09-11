@@ -2448,7 +2448,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.07';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.08';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3079,15 +3079,13 @@
       var ang=Math.atan2(tipy-p[1],tipx-p[0]), hl=Math.max(8,len*0.28);
       ctx.beginPath(); ctx.moveTo(tipx,tipy); ctx.lineTo(tipx-hl*Math.cos(ang-0.4),tipy-hl*Math.sin(ang-0.4));
       ctx.moveTo(tipx,tipy); ctx.lineTo(tipx-hl*Math.cos(ang+0.4),tipy-hl*Math.sin(ang+0.4)); ctx.stroke(); }
-    ctx.fillStyle=col; ctx.strokeStyle='#fff'; ctx.lineWidth=Math.max(1.5,lw(1)); ctx.beginPath(); ctx.arc(p[0],p[1],r,0,7); ctx.fill(); ctx.stroke();
+    // v1.08 写真の丸数字: 紫の丸（半径は番号が入る大きさ）に白い番号（利用者指定「白抜き丸数字」）
+    var lab=String(ph.no), rr=Math.max(r,Math.max(9,s*0.30));
+    ctx.fillStyle=col; ctx.strokeStyle='#fff'; ctx.lineWidth=Math.max(1.5,lw(1)); ctx.beginPath(); ctx.arc(p[0],p[1],rr,0,7); ctx.fill(); ctx.stroke();
     if(NOTXT)return;
-    var fpx=Math.max(10,s*0.35); ctx.font='700 '+fpx+'px ui-monospace,monospace'; ctx.textBaseline='top';
-    // v0.86: ラベルは円の中心に縦を揃え、横は文字高に比例した隙間で置く（PDF・DXF と同じ式）。
-    //   従来は 3 経路で縦位置がばらばら（画面 -r*0.2 / PDF -size*0.12 / DXF -size*0.4）で、
-    //   とくに DXF が円半径の約2倍も下がっていてラベルが円から切り離されて見えていた。
-    //   textBaseline='top' なので、中心揃えは上端 = 中心 - fpx/2。
-    var lab=pno(ph), lgap=Math.max(1,fpx*0.1), lx0=p[0]+r+lgap, ly0=p[1]-fpx*0.5;
-    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillText(lab,lx0+1,ly0+1); ctx.fillStyle=col; ctx.fillText(lab,lx0,ly0); }
+    var fpx=Math.max(9,rr*(lab.length>=3?0.9:1.25)); ctx.font='700 '+fpx+'px ui-monospace,monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff'; ctx.fillText(lab,p[0],p[1]+fpx*0.05);
+    ctx.textAlign='left'; ctx.textBaseline='top'; }
   function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
   function accent(){ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#f5a524'; }
   function niceLen(m){ var p=Math.pow(10,Math.floor(Math.log10(m))); var f=m/p; return (f>=5?5:f>=2?2:1)*p; }
@@ -3794,10 +3792,10 @@
   function sfSnapshot(){ SFV.undo.push(SFV.pts.map(function(p){ return [p[0],p[1]]; }));
     if(SFV.undo.length>50) SFV.undo.shift(); }
   function sfUndo(){ if(!SFV.undo.length){ toast('戻す操作がありません'); return; }
-    SFV.pts=SFV.undo.pop(); SFV.sel=-1; SFV.dir=0; sfSyncBar(); sfPaint(); }
+    SFV.pts=SFV.undo.pop(); SFV.sel=-1; SFV.dir=0; sfSyncBar(); sfPaint(); sfLive(); }   // v1.08
   function sfDelSel(){ if(SFV.sel<0||SFV.sel>=SFV.pts.length) return;
     if(sfIsAnchor(SFV.pts[SFV.sel])){ toast('▼▲ は消せません（ブロック範囲で決まる固定点です）',true); return; }
-    sfSnapshot(); SFV.pts.splice(SFV.sel,1); SFV.sel=-1; sfSyncBar(); sfPaint(); }
+    sfSnapshot(); SFV.pts.splice(SFV.sel,1); SFV.sel=-1; sfSyncBar(); sfPaint(); sfLive(); }   // v1.08
   // モード切替。折れ線は ▼▲（か確定済み sf）から始める。一筆書きは空から。
   function sfSetMode(m){ SFV.mode=(m==='free')?'free':'poly'; SFV.sel=-1; SFV.drawing=false; SFV.drag=null; SFV.down0=null;
     if(SFV.mode==='poly') SFV.pts=sfPolyInit((S.slip&&S.slip.sf)||[],sfHead(),sfTail());
@@ -3876,12 +3874,12 @@
   //   zlo/zhi: 地形断面の標高範囲（グリッドの範囲を決める）
   // v1.07 役割ごとのレイヤー。名前で探し、無ければ足す（パレットには入れない）。DXF ではこの名前のレイヤーに出る。
   function sfLayer(name,color,aci,label){ var i;
-    for(i=0;i<LAYERS.length;i++) if(LAYERS[i].name===name) return i;
+    for(i=0;i<LAYERS.length;i++) if(LAYERS[i].name===name){ if(name.indexOf('SF_')===0) LAYERS[i].aci=aci; return i; }   // v1.08 SF_ の aci は最新に揃える
     LAYERS.push({name:name,color:color,aci:aci,vis:true,added:true,label:label}); return LAYERS.length-1; }
   function sfLayers(){ return {
     gridm:sfLayer('SF_GRID_MINOR','#c9c9c9',9,'断面グリッド（細）'),
     grid:sfLayer('SF_GRID','#6f6f6f',8,'断面グリッド（太）'),
-    text:sfLayer('SF_TEXT','#2b2b2b',250,'断面の文字'),
+    text:sfLayer('SF_TEXT','#2b2b2b',7,'断面の文字'),   // aci 7: DXF で背景により白黒が反転する（v1.08）
     ground:sfLayer('RM_BROWN','#8a5a2b',33,'茶'),
     sf:sfLayer('RM_RED','#e5484d',1,'赤') }; }
   // lay: レイヤーの役割表 {gridm,grid,text,ground,sf}（v1.07。数値 1 つなら全部その色＝v1.06 までの呼び方）
@@ -3910,7 +3908,7 @@
     texts.push({layer:LY.text,x:ay[0]-h*7.5,y:ay[1]-h*2,t:'標高 (m)',h:h,rot:90,sfg:key,sfslot:slot,sfk:'ztitle'});
     // --- 地形断面（破線）・すべり面（太め）・ピッチの目印（標高値の文字は v1.06 で出さない＝グリッドで読める）
     var gp=[]; for(i=0;i<SM.length;i++){ if(SM[i].z==null) continue; gp.push(W(SM[i].d,SM[i].z)); }
-    if(gp.length>1) strokes.push({layer:LY.ground,pts:gp,dash:true,dashM:Math.max(1,h),sfg:key,sfslot:slot,sfk:'ground'});   // 茶（v1.07）
+    if(gp.length>1) strokes.push({layer:LY.ground,pts:gp,sfg:key,sfslot:slot,sfk:'ground'});   // 茶（v1.07）・実線（v1.08。v1.05〜07 は破線）
     if(sf&&sf.length>1){ var ss={layer:LY.sf,pts:sf.map(function(p){ return W(p[0],p[1]); }),sfg:key,sfslot:slot,sfk:'sf'}; ss.lwm=2; strokes.push(ss); }   // 赤（v1.07）
     var lv=slipLevels(sf,pitch);
     for(i=0;i<lv.length;i++){ var ds=sfCrossD(sf,lv[i]);
@@ -3940,6 +3938,18 @@
     for(i=0;i<P.texts.length;i++){ var t=P.texts[i]; t.id=uid(); S.texts.push(t); items.push({op:'add',arr:'texts',id:t.id}); }
     pushHist({op:'batch',items:items});
     return {slot:slot,strokes:P.strokes.length,texts:P.texts.length,ox:ox,oy:oy}; }
+  // v1.08 主測線を赤の線オブジェクトに。起終点が同じもの（measObj）が既にあれば作らない
+  function sfMeasObject(){ var MP=measPts(); if(MP.length<2) return null;
+    var a=MP[0], b=MP[MP.length-1], i;
+    function same(p,q){ return Math.hypot(p[0]-q[0],p[1]-q[1])<0.01; }
+    for(i=0;i<S.strokes.length;i++){ var st=S.strokes[i]; if(!st.measObj||!st.pts||st.pts.length<2) continue;
+      if(same(st.pts[0],a)&&same(st.pts[st.pts.length-1],b)) return null; }
+    var o={id:uid(),layer:sfLayer('RM_RED','#e5484d',1,'赤'),pts:MP.map(function(p){ return [p[0],p[1]]; }),measObj:true};
+    S.strokes.push(o); pushHist({op:'add',arr:'strokes',id:o.id}); markDirty(); return o; }
+  // v1.08 折れ線モードの編集に合わせて S.slip.sf を追従させ、直交線を更新する（作図は ✔／✕ のとき）
+  function sfLive(){ if(SFV.mode!=='poly'||!S.slip||SFV.pts.length<2) return;
+    var a=SFV.pts.map(function(p){ return [p[0],p[1]]; }); a.sort(function(p,q){ return p[0]-q[0]; });
+    S.slip.sf=a; markDirty(); refreshProfile(true); render(); }
   // ✔ 確定。下書きが無ければ何もしない（既存の sf を壊さない）。
   function sfCommit(){
     if(SFV.pts.length<2){ toast('まだ描いていません（一筆書きでなぞってから ✔）',true); return; }
@@ -3951,9 +3961,11 @@
     // v0.98: 確定してもビューは閉じない（モードの間は常に 1:1 断面を出しておく）
     refreshProfile(true);
     var ar=sfArchive();   // v1.05 図面枠外に 1:1 の作図として残す（ブロックごとの枡）
+    var mo=sfMeasObject();   // v1.08 主測線を赤の線に（同じ起終点があれば作らない）
     sfPaint(); render();
     toast('すべり面を確定しました。平面図に直交線を出しています（ピッチ '+slipPitch()+'m）'
-      +(ar?('。断面図を図面枠の右に作図しました（枡 '+(ar.slot+1)+'・線 '+ar.strokes+'・文字 '+ar.texts+'）'):'')); }
+      +(ar?('。断面図を図面枠の右に作図しました（枡 '+(ar.slot+1)+'・線 '+ar.strokes+'・文字 '+ar.texts+'）'):'')
+      +(mo?'。主測線を赤の線にしました':'')); }
   // 描画。地形断面・▼▲・既存 sf（灰）・下書き（赤）・グリッドと目盛。
   // 下書きがピッチの倍数の標高を切る位置にはペア色の丸（確定するとここに直交線が出る）。
   function sfPaint(){
@@ -4109,7 +4121,7 @@
           var ins=sfPolyInsert(SFV.pts,q3.d,q3.z,sfHead(),sfTail(),sfMinStep(),profZAt(q3.d));
           if(ins<0){ SFV.undo.pop(); toast('折れ点は ▼ と ▲ の間に、離して置いてください',true); }
           else SFV.sel=ins; } }
-      SFV.down0=null; SFV.dragAnchor=-1; sfSyncBar(); sfPaint(); }
+      SFV.down0=null; SFV.dragAnchor=-1; sfSyncBar(); sfPaint(); sfLive(); }   // v1.08 直交線を追従
     else if(SFV.drawing&&!Object.keys(SFV.pd).length){
       SFV.drawing=false;
       // 終点が ▲末端の近くなら吸着（向きに合うときだけ）
@@ -5888,6 +5900,11 @@
     var li=hitLeader(px,py); if(li>=0){ var o3=S.leaders.splice(li,1)[0]; pushHist({op:'del',arr:'leaders',obj:o3,index:li}); changed=true; }
     var yi=hitSym(px,py); if(yi>=0){ var o4=S.symbols.splice(yi,1)[0]; pushHist({op:'del',arr:'symbols',obj:o4,index:yi}); changed=true; }
     var pi=hitPhoto(px,py); if(pi>=0){ var o5=S.photos.splice(pi,1)[0]; pushHist({op:'del',arr:'photos',obj:o5,index:pi}); changed=true; }
+    // v1.08: 何にも当たらなければハッチを消す。領域（S.hatches）は取り除き、線 1 本のハッチは印だけ外す（線は残す）
+    if(!changed){ var hri=hitHatchRegion(px,py);
+      if(hri>=0){ var oh=S.hatches.splice(hri,1)[0]; pushHist({op:'del',arr:'hatches',obj:oh,index:hri}); changed=true; }
+      else { var hci=hitClosed(px,py); if(hci>=0&&S.strokes[hci].hatch){ S.strokes[hci].hatch=false;
+        pushHist({op:'set',arr:'strokes',id:S.strokes[hci].id,key:'hatch',from:true,to:false}); changed=true; } } }
     if(changed){ rebuildDrawer(); render(); } else render(); }
 
   // ---- Undo ----
@@ -6219,8 +6236,10 @@
   document.getElementById('sfMode').onclick=function(){ var m=(SFV.mode==='poly')?'free':'poly';
     sfSetMode(m); toast(m==='poly'?'折れ線: ▼と▲の間をタップして折れ点を置く（ドラッグで直せる）':'一筆書き: ▼から▲へペンでなぞる'); };
   document.getElementById('sfDel').onclick=function(){ sfDelSel(); };
-  document.getElementById('sfClose').onclick=function(){ sfCloseView();
-    toast('中止しました（確定済みのすべり面はそのままです）'); };
+  document.getElementById('sfClose').onclick=function(){
+    // v1.08: ✕ でも下書きがあれば確定と同じく作図に反映してから閉じる（利用者指定）
+    if(SFV.mode==='poly'&&SFV.pts.length>=2){ sfCommit(); sfCloseView(); toast('閉じました。断面図は図面枠の右に反映しています'); }
+    else { sfCloseView(); toast('中止しました（確定済みのすべり面はそのままです）'); } };
   (function(){ var c=document.getElementById('cvSf'); if(!c) return;
     c.addEventListener('pointerdown',function(e){
       try{ c.setPointerCapture&&c.setPointerCapture(e.pointerId); }catch(e2){}
@@ -6815,7 +6834,8 @@
       if(hex) o+=p(420,trueCol(hex));
       return o+p(6,'CONTINUOUS')+p(370,-3)+p(390,PSP); }
     dxf+=lrec('0',7);   // 既定エントリ（常に出す）
-    idx.forEach(function(i){ var L=LAYERS[i]; dxf+=lrec(L.name,L.aci,L.added?L.color:null); });
+    // v1.08: 断面図の SF_ レイヤーは True Color を書かず ACI だけ（SF_TEXT は 7＝背景で白黒が反転）。黒背景の AutoCAD で墨の文字が沈んでいた
+    idx.forEach(function(i){ var L=LAYERS[i]; dxf+=lrec(L.name,L.aci,(L.added&&L.name.indexOf('SF_')!==0)?L.color:null); });
     hidx.forEach(function(i){ var L=LAYERS[i]; dxf+=lrec(L.name+'_HATCH',L.aci,L.added?L.color:null); });
     if(hasPhoto) dxf+=lrec(PHOTOL.name,PHOTOL.aci);
     dxf+=p(0,'ENDTAB');
@@ -7025,7 +7045,7 @@
       // v0.75: ビルボード文字は図郭角θ・ワールド角ロック（寸法/回転指定）は t.rot
       var rt=t.rot?t.rot:(t.dimg?0:figRad), tvx=-Math.sin(rt), tvy=Math.cos(rt);
       dxf+=wMText(L.name,t.x+tvx*t.h,t.y+tvy*t.h,t.h,t.t,rt);
-      if(!t.dimg) dxf+=wCircle(L.name,t.x,t.y,t.h*0.15);   // v0.76: タップ点（基点＝GeoPDF /TSPt と同じ点・ワールド座標）を円で。InView ピボット参照
+      if(!t.dimg&&t.sfg==null) dxf+=wCircle(L.name,t.x,t.y,t.h*0.15);   // v0.76: タップ点（基点＝GeoPDF /TSPt と同じ点・ワールド座標）を円で。InView ピボット参照。v1.08 断面図の文字には出さない
     });
     S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0], P=leaderPts(ld,-figRad);   // v0.78: 棚向きも図郭水平基準（figRad=0 は従来）
       // 棚線は CAD の文字送り幅に足りるまで伸ばす（v0.32）。
@@ -7072,8 +7092,8 @@
       // v0.86: 縦は円の中心に揃え（TEXT は左・ベースライン基準。字面高さは約 0.7h なので
       //   baseline = 中心 - h*0.35）、横の隙間は文字高に比例（h*0.1）。画面・PDF と同じ式。
       //   従来は下に size*0.4（実測 4.0m）も離れており、円中心から文字まで 5.25m あった。
-      var phH6=ph.size*0.35;
-      dxf+=wText(l,ph.x+r+phH6*0.1,ph.y-phH6*0.35,phH6,pno(ph)); });
+      var phH6=ph.size*0.35, phLab6=String(ph.no);
+      dxf+=wText(l,ph.x-cadTextW(phLab6,phH6)/2,ph.y-phH6*0.35,phH6,phLab6); });   // v1.08 円の中心に
     dxf+=p(0,'ENDSEC');
 
     // ---- OBJECTS（R13+ 必須の名前付きオブジェクト辞書）--------------------
@@ -7373,7 +7393,9 @@
       // （二重に取り込まれるのを防ぐ）。読み手は /TSTick[間隔 長さ] から髭を再生成する。
       // 対応前の読み手でも、髭の無い線としてそのまま取り込める。
       var tk=s.tick?('/TSTick['+fp(s.tickP||TICK_P,3)+' '+fp(s.tickL||TICK_L,3)+']'):'';
-      if(s.closed) pline(s.pts,col,true,s.hatch?'hatch':null,db,tk); else ink([s.pts],col,db,dimKeys(s)+tk); });   // 閉じた線は Polygon 注釈・ハッチは /Subj(hatch)・点線は /BS の破線指定（v0.29.1）
+      if(s.closed) pline(s.pts,col,true,s.hatch?'hatch':null,db,tk);
+      else if(s.sfg!=null) pline(s.pts,col,false,null,db,'');   // v1.08 断面図の線は PolyLine（Ink は読み手が曲線に補間する）
+      else ink([s.pts],col,db,dimKeys(s)+tk); });   // 閉じた線は Polygon 注釈・ハッチは /Subj(hatch)・点線は /BS の破線指定（v0.29.1）
     // v1.03: 複数の線で囲まれた領域のハッチ。線を伴わない Polygon 注釈（輪郭は元の線が別に出る）。
     // v1.04: /Subj(fill) にした（プラグイン開発者の回答 REPLY_to_TerrainSketch_hatch_region_v1_03 第 1 案）。
     //   読み手は fill を「塗りだけ」と解釈して輪郭カーブを出さない。従来型（線 1 本のハッチ）は hatch のまま。
@@ -7382,7 +7404,7 @@
       var rt=t.rot||0, ux=Math.cos(rt), uy=Math.sin(rt), vx=-uy, vy=ux;   // v0.44
       var tp=w2p(t.x,t.y);   // v0.73: タッチポイント（ページ座標・MediaBox 左下原点）→ Reader の Text In-View 基点
       ftext(t.t, t.x+ux*t.h*0.35+vx*t.h*0.8, t.y+uy*t.h*0.35+vy*t.h*0.8, t.h, col, null, rt,
-        dimKeys(t)+dimPts(t)+'/TSPt ['+fp(tp[0],2)+' '+fp(tp[1],2)+']'); });   // v0.46 / v0.73
+        dimKeys(t)+dimPts(t)+((t.sfg!=null)?'':('/TSPt ['+fp(tp[0],2)+' '+fp(tp[1],2)+']'))); });   // v0.46 / v0.73。v1.08 断面図の文字はタップ点でないので /TSPt を持たない
     S.leaders.forEach(function(ld){ col=hexRgb01((LAYERS[ld.layer]||LAYERS[0]).color);
       var P=leaderPts(ld,frameRad);   // v0.78: 棚向きも図郭水平基準（北上=frameRad 未指定で従来）
       // 隠し注釈は CAD（プラグイン→Rhino）が読むので CAD 基準の幅で伸ばす（v0.32）。
@@ -7443,8 +7465,9 @@
         ink([[[tip[0]-hl*Math.cos(ang-0.4),tip[1]-hl*Math.sin(ang-0.4)],tip,[tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]]],col); }
       // v0.86: 縦は円の中心に揃え（ftext は左上基準なので上端 = 中心 + h/2）、
       //   横の隙間は文字高に比例（h*0.1）。画面・DXF と同じ式。
-      var phH=ph.size*0.35;
-      ftext(pno(ph), ph.x+r+phH*0.1, ph.y+phH*0.5, phH, col);
+      // v1.08 丸数字: 番号を円の中心に（注釈は塗りを持たないので円＋中央の番号）
+      var phH=ph.size*0.35, phLab=String(ph.no);
+      ftext(phLab, ph.x-measureTextW(phLab,phH)/2, ph.y+phH*0.5, phH, col);
       // 写真の属性（番号・方位・メモ）を注釈として持たせる（v0.35）。
       // 図形ではなく属性情報なので Hidden(/F 2) の Text 注釈にし、/Subj(photo) で
       // 種別を明示する。読み手はこれを拾って Rhino のユーザーテキスト等に移せる。
@@ -7704,8 +7727,8 @@
                 [tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]],PHOTOL.color,false); }
       // v0.86: 焼き込みも他の 3 経路と同じ置き方に（label は ftext と同じ左上基準）。
       //   縦は円の中心に揃え（上端 = 中心 + h/2）、横の隙間は文字高に比例（h*0.1）。
-      var phHo=ph.size*0.35;
-      label('T'+ph.id, ph.x+r+phHo*0.1, ph.y+phHo*0.5); });
+      var phHo=ph.size*0.35, phLabO=String(ph.no);
+      label('T'+ph.id, ph.x-measureTextW(phLabO,phHo)/2, ph.y+phHo*0.5); });   // v1.08 円の中心に
     ops+='Q\n';
     return {ops:ops, w2p:w2p};
   }
@@ -8111,7 +8134,7 @@
       sp.position.set(x0,y0,zTop+labH*0.55);
       if(ud){ ud._tap=1; sp.userData=Object.assign(sp.userData,ud); }
       ov.add(sp); }
-    S.texts.forEach(function(t){ var L=LAYERS[t.layer]||LAYERS[0]; if(!L.vis||!t.t)return;
+    S.texts.forEach(function(t){ var L=LAYERS[t.layer]||LAYERS[0]; if(!L.vis||!t.t||t.sfg!=null)return;   // v1.08 断面図（図面枠外）の文字は 3D に出さない
       poleLabel(t.x,t.y,t.t,L.color,Math.max(10,t.h*3),
         t.photo?{img:t.photo,cap:t.t.split('\n')[0]}:null); });
     // v0.80: 3D の旗揚げ（矢印＝柱＋矢先からラベルまで）を 30% 短く（要望）。
