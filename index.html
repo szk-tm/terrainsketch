@@ -399,6 +399,7 @@
      背景は薄くするだけ（塗り潰すと周りの地形が見えず、書く内容を決められない）。 */
   #modalBack.anchored{background:rgba(0,0,0,.18);align-items:flex-start;justify-content:flex-start;}
   #modal.anchored{position:absolute;width:318px;max-width:82vw;padding:11px;margin:0;
+    max-height:calc(100vh - 16px);overflow-y:auto;   /* v1.13 伸びても画面の中で止め、中をスクロール */
     box-shadow:0 12px 32px rgba(0,0,0,.5);
     display:flex;flex-direction:column;gap:7px;}
   #modal.anchored h3{display:none;}
@@ -584,6 +585,14 @@
   .hint2{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:2px;letter-spacing:0;}
   #dimPrev{width:100%;height:108px;border-radius:10px;background:#f7f9fb;border:1px solid var(--line);}
   /* 消しゴム設定シート（v0.46）。見本で有効範囲の大きさが分かる。 */
+  /* v1.13 写真の設定シート（消しゴムの設定と同じ見た目） */
+  #phSheet{position:fixed;inset:0;z-index:96;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;}
+  #phSheet.open{display:flex;}
+  #phSheet .box{width:min(460px,94vw);margin-bottom:calc(16px + var(--safe-b));background:var(--panel2);
+    border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px;}
+  #phSheet .shTitle{font-weight:800;font-size:15px;}
+  #phSheet .shRow{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  #phSheet .shLab{font-size:13px;color:var(--muted);min-width:96px;}
   #eraSheet{position:fixed;inset:0;z-index:96;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;}
   #eraSheet.open{display:flex;}
   #eraSheet .box{width:min(460px,94vw);margin-bottom:calc(16px + var(--safe-b));background:var(--panel2);
@@ -1085,6 +1094,31 @@
   <button class="ghost" id="dimSheetClose">閉じる</button>
 </div></div>
 
+<div id="phSheet"><div class="box">
+  <div class="shTitle">写真の設定（📷 を再タップ）</div>
+  <div class="shRow"><span class="shLab">丸の大きさ<br><span class="muted2" id="phSzNote">新しい写真の既定</span></span>
+    <div class="szBox">
+      <button class="szBtn phSzBtn" data-k="0.6" type="button" style="min-width:50px;">小</button>
+      <button class="szBtn phSzBtn" data-k="1" type="button" style="min-width:54px;">標準</button>
+      <button class="szBtn phSzBtn" data-k="1.5" type="button" style="min-width:50px;">大</button>
+      <button class="szBtn phSzBtn" data-k="2.2" type="button" style="min-width:56px;">特大</button>
+    </div></div>
+  <div class="shRow"><span class="shLab"></span><button id="phSzAll" class="ghost" type="button">今ある写真にも適用</button></div>
+  <div class="shRow"><span class="shLab">矢印の長さ</span>
+    <div class="szBox">
+      <button class="szBtn phArBtn" data-k="0.6" type="button" style="min-width:50px;">短</button>
+      <button class="szBtn phArBtn" data-k="1" type="button" style="min-width:54px;">標準</button>
+      <button class="szBtn phArBtn" data-k="1.5" type="button" style="min-width:50px;">長</button>
+    </div></div>
+  <div class="shRow"><span class="shLab">文字の大きさ<br><span class="muted2">キャプション</span></span>
+    <div class="szBox">
+      <button class="szBtn phCpBtn" data-k="0.25" type="button" style="min-width:50px;">小</button>
+      <button class="szBtn phCpBtn" data-k="0.35" type="button" style="min-width:54px;">標準</button>
+      <button class="szBtn phCpBtn" data-k="0.5" type="button" style="min-width:50px;">大</button>
+    </div></div>
+  <div class="muted2">矢印と文字はすべての写真に効きます。丸は新しい写真から（「今ある写真にも適用」で全部）。</div>
+  <button id="phSheetClose" class="ghost" type="button" style="width:100%;">閉じる</button>
+</div></div>
 <div id="eraSheet"><div class="box">
   <div class="shTitle">消しゴムの設定（🧽 を再タップ）</div>
   <canvas id="eraPrev" aria-label="有効範囲の見本"></canvas>
@@ -2462,7 +2496,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.12';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.13';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3104,7 +3138,7 @@
   function drawPhoto(ph){ var p=w2s(ph.x,ph.y), col=PHOTOL.color, s=ph.size*S.V.scale, r=Math.max(4,s*0.22);
     // 方位は地理的な向きなので地図の回転に追従させる
     if(ph.dir!=null&&!NOPHOTODIR){ var rad=ph.dir*Math.PI/180+(S.V.rot||0), dx=Math.sin(rad), dy=-Math.cos(rad);
-      var len=Math.max(16,s), tipx=p[0]+dx*len, tipy=p[1]+dy*len;
+      var len=Math.max(16,s*phArrow()), tipx=p[0]+dx*len, tipy=p[1]+dy*len;   // v1.13 矢印の長さは設定の倍率
       ctx.strokeStyle=col; ctx.lineWidth=lw(2.5); ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(tipx,tipy); ctx.stroke();
       var ang=Math.atan2(tipy-p[1],tipx-p[0]), hl=Math.max(8,len*0.28);
       ctx.beginPath(); ctx.moveTo(tipx,tipy); ctx.lineTo(tipx-hl*Math.cos(ang-0.4),tipy-hl*Math.sin(ang-0.4));
@@ -3117,11 +3151,13 @@
     var fpx=Math.max(8,rr*(lab.length>=3?0.9:1.25)); ctx.font='700 '+fpx+'px ui-monospace,monospace';
     ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff'; ctx.fillText(lab,p[0],p[1]+fpx*0.05);
     // v1.12 キャプション（note）を丸の下に。写真とテキストの統合で、文字はここに入る
-    if(ph.note){ var cpx=Math.max(10,ph.size*0.35*S.V.scale), lines=String(ph.note).split(String.fromCharCode(10)), k;
+    // v1.13 キャプションは選んだ色（ph.layer）で・大きさは設定の倍率。丸と矢印と番号は紫のまま
+    if(ph.note){ var cpx=Math.max(10,ph.size*phCap()*S.V.scale), lines=String(ph.note).split(String.fromCharCode(10)), k;
+      var capCol=(ph.layer!=null&&LAYERS[ph.layer])?LAYERS[ph.layer].color:col;
       ctx.font='600 '+cpx+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top';
       for(k=0;k<lines.length;k++){ var cy=p[1]+rr+cpx*0.35+k*cpx*1.2;
         ctx.lineWidth=Math.max(2,cpx*0.18); ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.strokeText(lines[k],p[0],cy);
-        ctx.fillStyle=col; ctx.fillText(lines[k],p[0],cy); } }
+        ctx.fillStyle=capCol; ctx.fillText(lines[k],p[0],cy); } }
     ctx.textAlign='left'; ctx.textBaseline='top'; }
   function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
   function accent(){ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#f5a524'; }
@@ -5304,7 +5340,7 @@
     // v1.12 写真ポイントも文字欄（＝キャプション）を持つ。文字高さは写真では使わない（size から決まる）
     el('mTextWrap').style.display=(isTL||mode==='sym'||mode==='photo')?'block':'none';
     el('mHRow').style.display=isTL?'flex':'none';
-    el('mColorRow').style.display=(mode==='photo')?'none':'flex';
+    el('mColorRow').style.display='flex';   // v1.13 写真ポイントでも色（キャプションの色）を選べる
     el('mSizeRow').style.display=(mode==='sym'||mode==='photo')?'flex':'none';
     el('mPhotoRow').style.display=(mode==='text')?'flex':'none';
     el('mDirWrap').style.display=(mode==='photo')?'block':'none';
@@ -5329,6 +5365,7 @@
     else if(mode==='sym'){ var sy=S.symbols[idx]; M.layer=sy.layer;
       el('symSizeIn').value=sy.size; el('txtInput').value=sy.label||''; }
     else if(mode==='photo'){ var ph=S.photos[idx]; el('symSizeIn').value=ph.size;
+      M.layer=(ph.layer!=null)?ph.layer:S.layer;   // v1.13
       el('txtInput').value=ph.note||''; el('txtInput').placeholder='キャプション（丸数字の下に出ます・任意）';   // v1.12
       el('dirIn').value=(ph.dir==null?'':Math.round(ph.dir)); el('noteIn').value=ph.note||'';
       el('pitchIn').value=(ph.pitch==null?'':Math.round(ph.pitch));
@@ -5511,7 +5548,9 @@
       el('btnPhoto').textContent=M.photo?'📷 撮り直す':'📷 写真を追加';
       el('txtInput').placeholder=M.photo?'キャプション（丸数字の下に出ます・任意）':'例: 崩壊地 頭部 / 湧水 / 亀裂 幅0.3m など';
       if(newPh){ el('photoNoIn').value=S.photoSeq; el('modalTitle').textContent='写真ポイント P-'+S.photoSeq+'（文字はキャプション）'; }
-      else if(M.editIdx<0) el('modalTitle').textContent='テキストを追加'; } }
+      else if(M.editIdx<0) el('modalTitle').textContent='テキストを追加'; }
+    // v1.13: 写真を付けた／外したら記入欄の高さが変わるので、置き場をやり直す（画像が読み終わった後にも）
+    if(M.anchor){ placeModal(M.anchor); p.onload=function(){ if(M.anchor) placeModal(M.anchor); }; } }
   // pickImage の戻り値は File（標準カメラ/ライブラリ）または {dataUrl,...}
   // （アプリ内カメラ）の 2 通り。どちらでも dataURL にする（v0.37）。
   function shotToDataURL(f){
@@ -5548,7 +5587,7 @@
         var psz2=(S.lastH&&S.lastH.photo)||defaultSizeM(30);
         var ph2={id:uid(),no:no2,x:M.xy[0],y:M.xy[1],dir:nd2,pitch:np2,
                  dirSrc:(nd2==null)?null:((M.phDir!=null&&Math.abs(nd2-Math.round(M.phDir))<0.5&&np2===(M.phPitch!=null?Math.round(M.phPitch):null))?M.phSrc:'manual'),
-                 size:psz2,img:M.photo,note:txt};
+                 size:psz2,img:M.photo,note:txt,layer:M.layer};   // v1.13 キャプションは選んだ色
         S.photos.push(ph2); pushHist({op:'add',arr:'photos',id:ph2.id});
         toast(pno(ph2)+' を追加'+(txt?'（キャプション付き）':'')); }
       else { var nt={id:uid(),x:M.xy[0],y:M.xy[1],t:txt,h:h,layer:M.layer,photo:null}; S.texts.push(nt); pushHist({op:'add',arr:'texts',id:nt.id}); } }
@@ -5565,7 +5604,7 @@
       var pv=el('pitchIn').value.trim(), np=(pv==='')?null:Math.max(-90,Math.min(90,parseFloat(pv)||0));
       // 手で変えたら取得元を manual にする（以後 自動値で上書きしない）
       if(nd!==ph.dir||np!==ph.pitch) ph.dirSrc='manual';
-      ph.dir=nd; ph.pitch=np; ph.note=txt;   // v1.12 キャプションは文字欄から
+      ph.dir=nd; ph.pitch=np; ph.note=txt; ph.layer=M.layer;   // v1.12 キャプションは文字欄から・v1.13 色
       var nv=el('photoNoIn').value.trim();
       if(nv!==''){ var nn=Math.max(0,parseInt(nv,10)||0); ph.no=nn; if(S.photoSeq<=nn) S.photoSeq=nn+1; } } }
     closeModal(); render(); };
@@ -5812,7 +5851,7 @@
       // 前回の写真サイズを引き継ぐ。初回だけ画面の縮尺から決める。
       var psz=(S.lastH&&S.lastH.photo)||defaultSizeM(30);
       var ph={id:uid(),no:S.photoSeq++,x:xy[0],y:xy[1],dir:r0.hd,pitch:r0.pitch,
-              dirSrc:(r0.hd!=null?r0.src:null),size:psz,img:r0.u,note:''};
+              dirSrc:(r0.hd!=null?r0.src:null),size:psz,img:r0.u,note:'',layer:S.layer};   // v1.13 layer はキャプションの色
       S.photos.push(ph); pushHist({op:'add',arr:'photos',id:ph.id}); hideLoad(); render();
       openModal('photo',S.photos.length-1,null);
       var lbl={live:'撮影時の方位 ',EXIF:'EXIF方位 ',compass:'方位(参考) '}[r0.src]||'方位 ';
@@ -6142,6 +6181,7 @@
     // 断面図は 📈 ボタンと地図のダブルタップに残してある。
     if(S.tool===tk&&tk==='measure'){ openDimSheet(); return; }
     if(S.tool===tk&&tk==='erase'){ openEraSheet(); return; }   // v0.46
+    if(S.tool===tk&&tk==='photo'){ openPhSheet(); return; }    // v1.13 写真の設定
     setTool(tk); }; });
   // v0.91: 線種は 実線(0)／点線(1)／両髭線(2) の 3 択。点線と両髭は排他。
   // v0.92: 見るのは「編集対象」（線をタップ中ならその線／ふだんはツールの既定）。
@@ -6456,6 +6496,27 @@
     g.textAlign='center'; g.textBaseline='top';
     g.fillText('半径 '+Math.round(er)+' px ／ '+(erasePartOn()?'部分削除':'まるごと削除'),cx,H-18);
     g.textAlign='left'; }
+  // ---- v1.13 写真の設定（丸の大きさ・矢印の長さ・文字の大きさ）----------------------
+  function phArrow(){ var v=+S.phArrow; return (isFinite(v)&&v>0)?v:1; }
+  function phCap(){ var v=+S.phCap; return (isFinite(v)&&v>0)?v:0.35; }
+  function phBase(){ return defaultSizeM(30); }   // 現在の縮尺での「標準」（写真ツールの既定と同じ）
+  function syncPhSheet(){ var base=phBase(), cur=(S.lastH&&S.lastH.photo)||base;
+    [].forEach.call(document.querySelectorAll('.phSzBtn'),function(b){ var k=parseFloat(b.getAttribute('data-k'));
+      b.classList.toggle('on',Math.abs(base*k-cur)<=Math.max(0.05,cur*0.08)); });
+    [].forEach.call(document.querySelectorAll('.phArBtn'),function(b){ b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-k'))-phArrow())<1e-6); });
+    [].forEach.call(document.querySelectorAll('.phCpBtn'),function(b){ b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-k'))-phCap())<1e-6); });
+    var n=document.getElementById('phSzNote'); if(n) n.textContent='新しい写真の既定: '+cur.toFixed(1)+' m'; }
+  function openPhSheet(){ document.getElementById('phSheet').classList.add('open'); syncPhSheet(); }
+  document.getElementById('phSheetClose').onclick=function(){ document.getElementById('phSheet').classList.remove('open'); };
+  document.getElementById('phSheet').addEventListener('click',function(e){ if(e.target===this) this.classList.remove('open'); });
+  [].forEach.call(document.querySelectorAll('.phSzBtn'),function(b){ b.onclick=function(){
+    S.lastH=S.lastH||{}; S.lastH.photo=Math.round(phBase()*parseFloat(b.getAttribute('data-k'))*10)/10; syncPhSheet(); }; });
+  document.getElementById('phSzAll').onclick=function(){ var sz=(S.lastH&&S.lastH.photo)||phBase(), items=[];
+    S.photos.forEach(function(ph){ if(ph.size!==sz){ items.push({op:'set',arr:'photos',id:ph.id,key:'size',from:ph.size,to:sz}); ph.size=sz; } });
+    if(items.length){ pushHist({op:'batch',items:items}); markDirty(); render(); toast(items.length+' 枚の写真を '+sz.toFixed(1)+' m にしました'); }
+    else toast('変わる写真はありません'); };
+  [].forEach.call(document.querySelectorAll('.phArBtn'),function(b){ b.onclick=function(){ S.phArrow=parseFloat(b.getAttribute('data-k')); markDirty(); syncPhSheet(); render(); }; });
+  [].forEach.call(document.querySelectorAll('.phCpBtn'),function(b){ b.onclick=function(){ S.phCap=parseFloat(b.getAttribute('data-k')); markDirty(); syncPhSheet(); render(); }; });
   function syncEraSheet(){
     [].forEach.call(document.querySelectorAll('.erBtn'),function(b){
       b.classList.toggle('on',parseFloat(b.getAttribute('data-er'))===eraseRad()); });
@@ -6919,6 +6980,7 @@
     var hatchUsed={}; S.strokes.forEach(function(st){ if(st.hatch&&st.closed)hatchUsed[st.layer]=1; });
     (S.hatches||[]).forEach(function(h){ hatchUsed[h.layer]=1; used[h.layer]=1; });   // v1.03 領域のハッチ
     S.leaders.forEach(function(l){used[l.layer]=1;}); S.symbols.forEach(function(sy){used[sy.layer]=1;});
+    S.photos.forEach(function(ph){ if(ph.note&&ph.layer!=null&&LAYERS[ph.layer]) used[ph.layer]=1; });   // v1.13 キャプションの色のレイヤー
     var idx=Object.keys(used).map(Number), hidx=Object.keys(hatchUsed).map(Number), hasPhoto=S.photos.length>0;
     // ---- 寸法（v0.45）--------------------------------------------------
     // S.dims があるものは DIMENSION として出す。分解した線と文字は無名ブロックへ回し、
@@ -7258,9 +7320,9 @@
       return o; }
     S.photos.forEach(function(ph){ var l=PHOTOL.name, r=ph.size*0.22;
       dxf+=wCircle(l,ph.x,ph.y,r)+xdPhoto(ph);
-      if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, dx=Math.sin(rad), dy=Math.cos(rad), tipx=ph.x+dx*ph.size, tipy=ph.y+dy*ph.size;
+      if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, dx=Math.sin(rad), dy=Math.cos(rad), al=ph.size*phArrow(), tipx=ph.x+dx*al, tipy=ph.y+dy*al;   // v1.13 矢印の長さ
         dxf+=wLine(l,ph.x,ph.y,tipx,tipy);
-        var ang=Math.atan2(tipy-ph.y,tipx-ph.x), hl=ph.size*0.28;
+        var ang=Math.atan2(tipy-ph.y,tipx-ph.x), hl=al*0.28;
         dxf+=wLine(l,tipx,tipy,tipx-hl*Math.cos(ang-0.4),tipy-hl*Math.sin(ang-0.4));
         dxf+=wLine(l,tipx,tipy,tipx-hl*Math.cos(ang+0.4),tipy-hl*Math.sin(ang+0.4)); }
       // v0.86: 縦は円の中心に揃え（TEXT は左・ベースライン基準。字面高さは約 0.7h なので
@@ -7269,9 +7331,10 @@
       var phH6=ph.size*0.35, phLab6=String(ph.no);
       dxf+=wText(l,ph.x-cadTextW(phLab6,phH6)/2,ph.y-phH6*0.35,phH6,phLab6);   // v1.08 円の中心に
       // v1.12 キャプション（note）を円の下に 1 行ずつ（画面と同じ: 文字高 size*0.35・中央そろえ）
-      if(ph.note){ var cl6=String(ph.note).split(String.fromCharCode(10)), k6;
+      if(ph.note){ var cl6=String(ph.note).split(String.fromCharCode(10)), k6, cH6=ph.size*phCap();
+        var cl=(ph.layer!=null&&LAYERS[ph.layer])?LAYERS[ph.layer].name:l;   // v1.13 キャプションは選んだ色のレイヤー
         for(k6=0;k6<cl6.length;k6++){ if(!cl6[k6]) continue;
-          dxf+=wText(l,ph.x-cadTextW(cl6[k6],phH6)/2,ph.y-r-phH6*(1.05+1.2*k6),phH6,cl6[k6]); } } });
+          dxf+=wText(cl,ph.x-cadTextW(cl6[k6],cH6)/2,ph.y-r-cH6*(1.05+1.2*k6),cH6,cl6[k6]); } } });
     dxf+=p(0,'ENDSEC');
 
     // ---- OBJECTS（R13+ 必須の名前付きオブジェクト辞書）--------------------
@@ -7637,9 +7700,9 @@
       if(sy.label){ var la=rW(x+r*1.25, y+sy.size*0.27, x, y); ftext(sy.label, la[0], la[1], sy.size*0.45, col); } });
     S.photos.forEach(function(ph){ col=hexRgb01(PHOTOL.color); var r=ph.size*0.22;
       circ(ph.x,ph.y,r,col);
-      if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, dx=Math.sin(rad), dy=Math.cos(rad), tip=[ph.x+dx*ph.size,ph.y+dy*ph.size];
+      if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, dx=Math.sin(rad), dy=Math.cos(rad), al=ph.size*phArrow(), tip=[ph.x+dx*al,ph.y+dy*al];   // v1.13
         seg([ph.x,ph.y],tip,col,true);
-        var ang=Math.atan2(tip[1]-ph.y,tip[0]-ph.x), hl=ph.size*0.28;
+        var ang=Math.atan2(tip[1]-ph.y,tip[0]-ph.x), hl=al*0.28;
         ink([[[tip[0]-hl*Math.cos(ang-0.4),tip[1]-hl*Math.sin(ang-0.4)],tip,[tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]]],col); }
       // v0.86: 縦は円の中心に揃え（ftext は左上基準なので上端 = 中心 + h/2）、
       //   横の隙間は文字高に比例（h*0.1）。画面・DXF と同じ式。
@@ -7650,10 +7713,11 @@
       var phH=ph.size*0.35, phLab=String(ph.no);
       ftext(phLab, ph.x-(Math.max(phH,measureTextW(phLab,phH))+phH*0.4)/2, ph.y+phH*0.425, phH, col);
       // v1.12 キャプション（note）を円の下に 1 行ずつ（/Rect の中心が円の真下に来るよう左上を逆算）
-      if(ph.note){ var cl=String(ph.note).split(String.fromCharCode(10)), kc;
+      if(ph.note){ var cl=String(ph.note).split(String.fromCharCode(10)), kc, cH=ph.size*phCap();
+        var ccol=(ph.layer!=null&&LAYERS[ph.layer])?hexRgb01(LAYERS[ph.layer].color):col;   // v1.13 キャプションは選んだ色
         for(kc=0;kc<cl.length;kc++){ if(!cl[kc]) continue;
-          var cyc=ph.y-r-phH*(0.85+1.2*kc);   // 行の中心の高さ
-          ftext(cl[kc], ph.x-(Math.max(phH,measureTextW(cl[kc],phH))+phH*0.4)/2, cyc+phH*0.425, phH, col); } }
+          var cyc=ph.y-r-cH*(0.85+1.2*kc);   // 行の中心の高さ
+          ftext(cl[kc], ph.x-(Math.max(cH,measureTextW(cl[kc],cH))+cH*0.4)/2, cyc+cH*0.425, cH, ccol); } }
       // 写真の属性（番号・方位・メモ）を注釈として持たせる（v0.35）。
       // 図形ではなく属性情報なので Hidden(/F 2) の Text 注釈にし、/Subj(photo) で
       // 種別を明示する。読み手はこれを拾って Rhino のユーザーテキスト等に移せる。
@@ -7906,18 +7970,18 @@
       if(sy.label)label('T'+sy.id, x+r*1.25, y+sy.size*0.27); });
     S.photos.forEach(function(ph){ var r=ph.size*0.22;
       circ(ph.x,ph.y,r,PHOTOL.color);
-      if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, tip=[ph.x+Math.sin(rad)*ph.size,ph.y+Math.cos(rad)*ph.size];
+      if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, al2=ph.size*phArrow(), tip=[ph.x+Math.sin(rad)*al2,ph.y+Math.cos(rad)*al2];   // v1.13 矢印の長さ
         stroke([[ph.x,ph.y],tip],PHOTOL.color,false);
-        var ang=Math.atan2(tip[1]-ph.y,tip[0]-ph.x),hl=ph.size*0.28;
+        var ang=Math.atan2(tip[1]-ph.y,tip[0]-ph.x),hl=al2*0.28;
         stroke([[tip[0]-hl*Math.cos(ang-0.4),tip[1]-hl*Math.sin(ang-0.4)],tip,
                 [tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]],PHOTOL.color,false); }
       // v0.86: 焼き込みも他の 3 経路と同じ置き方に（label は ftext と同じ左上基準）。
       //   縦は円の中心に揃え（上端 = 中心 + h/2）、横の隙間は文字高に比例（h*0.1）。
       var phHo=ph.size*0.35, phLabO=String(ph.no);
       label('T'+ph.id, ph.x-measureTextW(phLabO,phHo)/2, ph.y+phHo*0.5);   // v1.08 円の中心に
-      if(ph.note){ var clo=String(ph.note).split(String.fromCharCode(10)), ko;
+      if(ph.note){ var clo=String(ph.note).split(String.fromCharCode(10)), ko, cHo=ph.size*phCap();
         for(ko=0;ko<clo.length;ko++){ if(!clo[ko]) continue;
-          label('N'+ph.id+'_'+ko, ph.x-measureTextW(clo[ko],phHo)/2, ph.y-r-phHo*(0.85+1.2*ko)+phHo*0.5); } } });   // v1.12 キャプション
+          label('N'+ph.id+'_'+ko, ph.x-measureTextW(clo[ko],cHo)/2, ph.y-r-cHo*(0.85+1.2*ko)+cHo*0.5); } } });   // v1.12 キャプション・v1.13 大きさ
     ops+='Q\n';
     return {ops:ops, w2p:w2p};
   }
@@ -7927,7 +7991,8 @@
     S.leaders.forEach(function(ld){ out['T'+ld.id]={text:ld.t||'',h:ld.h,color:(LAYERS[ld.layer]||LAYERS[0]).color}; });
     S.symbols.forEach(function(sy){ if(sy.label)out['T'+sy.id]={text:sy.label,h:sy.size*0.45,color:(LAYERS[sy.layer]||LAYERS[0]).color}; });
     S.photos.forEach(function(ph){ out['T'+ph.id]={text:String(ph.no),h:ph.size*0.35,color:PHOTOL.color};   // v1.12 丸数字は番号だけ（v1.08 で画面・注釈は直したが焼き込みが P-001 のままだった）
-      if(ph.note){ String(ph.note).split(String.fromCharCode(10)).forEach(function(ln,ko){ if(ln) out['N'+ph.id+'_'+ko]={text:ln,h:ph.size*0.35,color:PHOTOL.color}; }); } });
+      if(ph.note){ var cc=(ph.layer!=null&&LAYERS[ph.layer])?LAYERS[ph.layer].color:PHOTOL.color;   // v1.13 色と大きさ
+        String(ph.note).split(String.fromCharCode(10)).forEach(function(ln,ko){ if(ln) out['N'+ph.id+'_'+ko]={text:ln,h:ph.size*phCap(),color:cc}; }); } });
     // v0.29: ラベルはベクター文字で描くので text/h/color だけ集める。
     // （旧: makeLabelImg で JPEG+SMask 生成 → 拡大で滲む・検索不可・容量大）
     return out;
@@ -8474,6 +8539,7 @@
       dimH:+S.dimH||0, dimArrow:dimArrowR(), dimLwm:dimLwmR(), dimOff:dimOffR(),
       dimLayer:dimLayerR(), dimPara:S.dimPara===true,   // v0.44
       eraseR:eraseRad(), erasePart:S.erasePart===true,   // v0.46
+      phArrow:phArrow(), phCap:phCap(),   // v1.13 写真の矢印の長さ・キャプションの大きさ（size に対する倍率）
       layers:LAYERS.map(function(L){return {name:L.name,color:L.color,aci:L.aci,vis:L.vis,added:!!L.added};}),
       pal:palNorm(), symOrder:symOrderList(),   // v0.50 パレットの色と記号の並び
       photoLayerVis:PHOTOL.vis,
@@ -8569,6 +8635,7 @@
     if(o.dimLayer!=null) S.dimLayer=o.dimLayer|0;
     if(o.dimPara!=null) S.dimPara=(o.dimPara===true);
     if(o.eraseR>0) S.eraseR=+o.eraseR;                                     // v0.46
+    S.phArrow=(o.phArrow>0)?+o.phArrow:1; S.phCap=(o.phCap>0)?+o.phCap:0.35;   // v1.13（無ければ既定）
     if(o.erasePart!=null) S.erasePart=(o.erasePart===true);
     var pex=document.getElementById('profEx'); if(pex)pex.value=String(S.profEx);
     updateMeasBar(); refreshProfile();
