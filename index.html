@@ -774,7 +774,7 @@
     <div class="frowD"><label>地図の向き</label>
       <button id="btnNorthD" class="ghost" style="flex:0 0 auto;">🧭 北を上に戻す</button></div>
     <div class="muted2">2本指でひねると地図を回せます（進行方向を上にすると現地と照合しやすい）。作図データは回転しません＝DXF/GeoPDFの出力は常に北が上です。</div>
-    <div class="frowD"><label>方位の偏角補正</label><input type="number" id="declIn" step="0.1" value="0"><span class="muted2">°（西偏7°なら -7）</span></div>
+    <div class="frowD"><label>方位の偏角補正</label><input type="number" id="declIn" step="0.1" value="0"><button id="declAuto" class="ghost" style="min-height:34px;padding:0 10px;font-size:12px;">自動</button><span class="muted2">°（西偏7°なら -7）／「自動」は図面の位置から国土地理院 2020.0 年値の近似式で求めます</span></div>
     <div class="muted2">写真の方位は端末コンパス（磁北）を基準に記録します。真北・座標北へ合わせる場合は上の補正を設定してから撮影してください。</div>
     <div class="dSec">描画</div>
     <div class="frowD"><label>再描画の速さ</label>
@@ -2453,7 +2453,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.10';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.11';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -2552,6 +2552,22 @@
   // v0.68: 図郭（ページの上）を画面の上に立てる回転。w2s の回転規約（正=時計回り）に
   //   合わせて S.V.rot=atan2(-b,e)（= -affNorthDeg のラジアン）。北上のページでは 0。
   //   これで「PDF 本来の向き」で表示する。方位は aff から分かるので記録は不変。
+  // ---- v1.11 磁気偏角（国土地理院 2020.0 年値の近似式）--------------------------
+  // 返り値は**西偏を正**とした度（日本は全域で西偏）。真北 = 磁北 - D。
+  // 出典: 国土地理院「地磁気値(2020.0年値）を求める」の近似式（緯度経度の二次式・単位は分）。
+  //   D = 8°15.822' + 18.462'Δφ - 7.726'Δλ + 0.007'Δφ² - 0.007'ΔφΔλ - 0.655'Δλ²
+  // 但し書き: 地域的な磁気異常は反映しない。離島では精度が落ちる。
+  function geoDeclWest(lat,lon){
+    if(!isFinite(lat)||!isFinite(lon)) return null;
+    if(lat<20||lat>50||lon<120||lon>154) return null;   // 国土地理院の計算範囲の外
+    var dp=lat-37, dl=lon-138;
+    var min=495.822+18.462*dp-7.726*dl+0.007*dp*dp-0.007*dp*dl-0.655*dl*dl;
+    return min/60; }
+  // world（平面直角）の点での偏角。系番号が無い・範囲外なら null。
+  function declAtWorld(x,y){
+    if(!isFinite(x)||!isFinite(y)) return null;
+    try{ var r=proj4('JPC:'+S.Z,'EPSG:4326',[x,y]); return geoDeclWest(r[1],r[0]); }
+    catch(e){ return null; } }
   function frameRotOf(m){ if(!m) return 0; return Math.atan2(-m.b, m.e); }
   // ラスタの画像画素(px 右, py 下, 原点は左上) -> world。
   // aff を持たない（軸並行・古い保存）ラスタは外接矩形から作る。
@@ -5387,6 +5403,30 @@
   function trimEnd(t){ var i=t.length;
     while(i>0){ var k=t.charCodeAt(i-1); if(k===32||k===9||k===13||k===10) i--; else break; }
     return t.slice(0,i); }
+  // v1.11 走向（N30E 等）→ 方位角[度]。N-S は 0、E-W は 90。
+  function sdStrikeAz(st){
+    if(st==='N-S') return 0;
+    if(st==='E-W') return 90;
+    var v=parseFloat(st.slice(1,st.length-1));
+    return (st.charAt(st.length-1)==='E')?v:(360-v)%360; }
+  // 方位角[度] → 走向の文字。0〜180 に畳んでから N##E / N##W / N-S / E-W。
+  function sdAzStrike(az){
+    var s=az; while(s<0) s+=180; while(s>=180) s-=180;
+    var r=Math.round(s);
+    if(r===0||r===180) return 'N-S';
+    if(r===90) return 'E-W';
+    return (r<90)?('N'+r+'E'):('N'+(180-r)+'W'); }
+  function sdQuad(az){ var d=az%360; while(d<0) d+=360;
+    return (d<90)?'NE':((d<180)?'SE':((d<270)?'SW':'NW')); }
+  // 走向と傾斜の側から、傾斜方向の方位角を組み立てる（走向に直交する 2 つのうち象限が合うほう）
+  function sdDipDir(o){
+    var s=sdStrikeAz(o.strike), a=(s+90)%360, b=(s+270)%360;
+    return (sdQuad(a)===o.quad)?a:b; }
+  // v1.11 磁北→真北。declWest は西偏を正とした度。
+  function sdApplyDecl(o,declWest){
+    if(!o||!isFinite(declWest)) return o;
+    var az=sdDipDir(o)-declWest; while(az<0) az+=360; az=az%360;
+    return {strike:sdAzStrike(az-90),dip:o.dip,quad:sdQuad(az)}; }
   function sdSetHint(t){ var h=el('sdHint'); if(h){ h.textContent=t; } }
   function sdOn(){
     if(SD.on) return;
@@ -5417,11 +5457,20 @@
     if(SD.timer){ clearTimeout(SD.timer); SD.timer=0; }
     var raw=SD.buf; SD.buf='';
     if(!raw) return;
-    var o=sdParse(raw), txt=o?sdFormat(o):raw;
+    // v1.11 末尾の印で「磁北のまま(M)」「機器が補正済み(T)」「無印(従来)」を見分ける
+    var mark='', body=raw, tail=raw.charAt(raw.length-1).toUpperCase();
+    if(tail==='M'||tail==='T'){ mark=tail; body=raw.slice(0,raw.length-1); }
+    var o=sdParse(body), note='';
+    if(o&&mark==='M'){
+      var p=(M.xy?((M.mode==='leader')?M.xy[1]:M.xy):null);
+      var dw=p?declAtWorld(p[0],p[1]):null;
+      if(dw==null){ note='（偏角を出せませんでした: 磁北のままです）'; }
+      else { o=sdApplyDecl(o,dw); note='（偏角 '+dw.toFixed(1)+'°W を補正）'; } }
+    var txt=o?sdFormat(o):raw;
     var ta=el('txtInput'), cur=ta.value;
     var NL=String.fromCharCode(10);   // 追加行にバックスラッシュを書かない（§3.3）
     ta.value=cur?(trimEnd(cur)+NL+txt):txt;
-    sdSetHint(o?('受け取りました: '+txt+'（続けて測れます）')
+    sdSetHint(o?('受け取りました: '+txt+note+'（続けて測れます）')
                :('読めない形式でした: '+raw+'（そのまま入れました）'));
     render(); }
   function closeModal(){ sdOff();   // v1.10 記入欄を閉じたら必ず解除する
@@ -6607,6 +6656,12 @@
     b.ondblclick=function(e){ e.preventDefault(); toggleRotLock(); }; })();
   document.getElementById('btnNorthD').onclick=function(){ resetNorth(); };
   document.getElementById('declIn').onchange=function(){ S.decl=parseFloat(this.value)||0; };
+  // v1.11 画面中心の位置から偏角を求めて入れる（西偏は負の値で入る）
+  document.getElementById('declAuto').onclick=function(){
+    var d=declAtWorld(S.V.cx,S.V.cy);
+    if(d==null){ toast('図面の位置から偏角を出せませんでした（系番号と図郭を確かめてください）',true); return; }
+    S.decl=-Math.round(d*10)/10; document.getElementById('declIn').value=S.decl; markDirty();
+    toast('偏角 '+d.toFixed(1)+'°W（西偏）を入れました。国土地理院 2020.0 年値の近似式によります'); };
   // 記入欄の位置（v0.39）。チェックボックスは手袋運用で当たり判定が小さいので
   // 既存のボタン + 選択状態（primary/ghost）で表す。
   function syncAnchorIn(){ var b=document.getElementById('btnAnchorIn'), on=(S.anchorIn!==false);
