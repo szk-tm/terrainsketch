@@ -413,6 +413,10 @@
   #modal.anchored #mColorRow{order:2;}
   #modal.anchored #mSizeRow{order:3;}
   #modal.anchored #mPhotoRow{order:4;}
+  #modal.anchored #sdHint{order:4;}
+  /* v1.10 走向傾斜モード。ON は記入欄の縁と同じ色で「待っている」ことを示す */
+  #btnSD.on{background:var(--acc);color:#17202a;border-color:var(--acc);}
+  #sdHint{font-size:11px;line-height:1.35;}
   #modal.anchored #photoPrev{order:5;}
   #modal.anchored #mDirWrap{order:6;}
   #modal.anchored #mTextWrap{order:7;display:flex;flex-direction:column-reverse;gap:7px;}
@@ -838,7 +842,8 @@
       <span class="szVal" id="szVal">10 m</span>
     </div>
     <input type="number" id="symSizeIn" class="hidden" step="0.5" min="0.1"></div>
-  <div class="frow" id="mPhotoRow"><label>写真</label><button id="btnPhoto">📷 写真を追加</button><button id="btnPhotoDel" class="ghost hidden">削除</button></div>
+  <div class="frow" id="mPhotoRow"><label>写真</label><button id="btnPhoto">📷 写真を追加</button><button id="btnPhotoDel" class="ghost hidden">削除</button><button id="btnSD" title="AtomS3R から走向傾斜を受け取る">📐 走向傾斜</button></div>
+  <div class="muted2" id="sdHint" style="display:none;">AtomS3R のボタンを押すと、この下の欄に走向傾斜が入ります（キーボード入力は受け付けません）</div>
   <img id="photoPrev" alt="">
   <div id="mDirWrap" style="display:none;">
     <div class="frow" id="mNoRow"><label>番号</label><span style="color:var(--muted)">P-</span><input type="number" id="photoNoIn" step="1" min="0" style="width:88px"><span class="muted2">この番号から連番になります</span></div>
@@ -2448,7 +2453,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.09';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.10';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5305,7 +5310,9 @@
     // v0.39.2: テキストも旗揚げと同じく置く位置を仮マーキングする。
     // 記入中に「どこに置こうとしていたか」を見失わないようにするため。
     S.markTip=(isTL&&M.wpt)?M.wpt:null; if(S.markTip) render();
-    if(isTL) setTimeout(function(){el('txtInput').focus();},60);
+    // v1.10 走向傾斜モードの間は自動フォーカスしない（IME を働かせないため）
+    if(isTL&&!SD.on) setTimeout(function(){el('txtInput').focus();},60);
+    if(SD.on){ el('sdHint').style.display=''; el('btnSD').classList.add('on'); }
   }
   // ---- 記入欄の配置（v0.39）--------------------------------------------------
   // 現場では小指側を画面に置いたままペンで書くため、タップ位置と記入欄が離れていると
@@ -5356,7 +5363,69 @@
   // キーボードの出入りで可視領域が変わったら置き直す（iPad では高さが縮む）。
   if(window.visualViewport) window.visualViewport.addEventListener('resize',function(){
     if(M.anchor&&modalBack.style.display==='flex') placeModal(M.anchor); });
-  function closeModal(){ modalBack.style.display='none';
+  // ---- v1.10 走向傾斜（AtomS3R を BLE キーボードとして受ける）--------------------
+  // 記入欄にフォーカスがあると日本語 IME が働いて「84ね」のような変換候補が出るので、
+  // ON の間はフォーカスを外し、document の keydown で直接受ける（IME を通さない）。
+  var SD={on:false,buf:'',timer:0};
+  var SD_IDLE_MS=400;      // これだけ何も来なければ 1 回ぶんとみなす（機器は Enter を送らない）
+  // 'N81W84NE' → {strike:'N81W', dip:84, quad:'NE'}。読めなければ null。
+  //   走向は N##E / N##W / N-S / E-W、傾斜の側は NE/SE/SW/NW。
+  function sdParse(s){
+    var m=new RegExp('^(N-S|E-W|[NS][0-9]{1,2}(?:[.][0-9]+)?[EW])([0-9]{1,2}(?:[.][0-9]+)?)(NE|SE|SW|NW)$')
+      .exec(String(s||'').split(' ').join('').toUpperCase());
+    if(!m) return null;
+    var d=parseFloat(m[2]); if(!(d>=0&&d<=90)) return null;
+    return {strike:m[1],dip:d,quad:m[3]}; }
+  // {strike:'N81W',dip:84,quad:'NE'} → 'N81°W 84°NE'
+  function sdFormat(o){
+    if(!o) return '';
+    var st=o.strike, out;
+    if(st==='N-S'||st==='E-W') out=st;
+    else out=st.charAt(0)+st.slice(1,st.length-1)+'°'+st.charAt(st.length-1);
+    return out+' '+o.dip+'°'+o.quad; }
+  // 末尾の空白・改行を落とす（正規表現を使わない＝§3.3）
+  function trimEnd(t){ var i=t.length;
+    while(i>0){ var k=t.charCodeAt(i-1); if(k===32||k===9||k===13||k===10) i--; else break; }
+    return t.slice(0,i); }
+  function sdSetHint(t){ var h=el('sdHint'); if(h){ h.textContent=t; } }
+  function sdOn(){
+    if(SD.on) return;
+    SD.on=true; SD.buf='';
+    el('btnSD').classList.add('on');
+    el('sdHint').style.display='';
+    sdSetHint('AtomS3R のボタンを押すと、この下の欄に走向傾斜が入ります（キーボード入力は受け付けません）');
+    el('txtInput').blur();
+    document.addEventListener('keydown',sdKey,true);
+    toast('走向傾斜モード: AtomS3R のボタンを押してください'); }
+  function sdOff(){
+    if(!SD.on) return;
+    SD.on=false; SD.buf=''; if(SD.timer){ clearTimeout(SD.timer); SD.timer=0; }
+    var b=el('btnSD'); if(b) b.classList.remove('on');
+    var h=el('sdHint'); if(h) h.style.display='none';
+    document.removeEventListener('keydown',sdKey,true); }
+  function sdKey(e){
+    if(!SD.on) return;
+    if(e.ctrlKey||e.metaKey||e.altKey) return;   // 機器の入力ソース切替（Ctrl+Space）は拾わない
+    if(e.key==='Enter'){ e.preventDefault(); sdFlush(); return; }
+    if(e.key==='Escape'){ e.preventDefault(); sdOff(); return; }
+    if(e.key&&e.key.length===1){ e.preventDefault();
+      SD.buf+=e.key;
+      if(SD.timer) clearTimeout(SD.timer);
+      SD.timer=setTimeout(sdFlush,SD_IDLE_MS); } }
+  // 溜めた文字を 1 回ぶんとして記入欄へ入れる
+  function sdFlush(){
+    if(SD.timer){ clearTimeout(SD.timer); SD.timer=0; }
+    var raw=SD.buf; SD.buf='';
+    if(!raw) return;
+    var o=sdParse(raw), txt=o?sdFormat(o):raw;
+    var ta=el('txtInput'), cur=ta.value;
+    var NL=String.fromCharCode(10);   // 追加行にバックスラッシュを書かない（§3.3）
+    ta.value=cur?(trimEnd(cur)+NL+txt):txt;
+    sdSetHint(o?('受け取りました: '+txt+'（続けて測れます）')
+               :('読めない形式でした: '+raw+'（そのまま入れました）'));
+    render(); }
+  function closeModal(){ sdOff();   // v1.10 記入欄を閉じたら必ず解除する
+    modalBack.style.display='none';
     modalBack.classList.remove('anchored');
     el('modal').classList.remove('anchored'); el('modal').classList.remove('below');
     // 仮マーカーを消す（v0.39.2）。どの閉じ方でも必ず消えるようここで行う。
@@ -6236,6 +6305,7 @@
   document.getElementById('sfMode').onclick=function(){ var m=(SFV.mode==='poly')?'free':'poly';
     sfSetMode(m); toast(m==='poly'?'折れ線: ▼と▲の間をタップして折れ点を置く（ドラッグで直せる）':'一筆書き: ▼から▲へペンでなぞる'); };
   document.getElementById('sfDel').onclick=function(){ sfDelSel(); };
+  document.getElementById('btnSD').onclick=function(){ if(SD.on) sdOff(); else sdOn(); };   // v1.10
   document.getElementById('sfClose').onclick=function(){
     // v1.08: ✕ でも下書きがあれば確定と同じく作図に反映してから閉じる（利用者指定）
     if(SFV.mode==='poly'&&SFV.pts.length>=2){ sfCommit(); sfCloseView(); toast('閉じました。断面図は図面枠の右に反映しています'); }
