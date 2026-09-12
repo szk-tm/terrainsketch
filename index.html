@@ -2448,7 +2448,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.08';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.09';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3905,7 +3905,7 @@
       texts.push({layer:LY.text,x:ld[0]-h*String(Math.round(d)).length*0.3,y:ld[1]-h*1.6,t:String(Math.round(d)),h:h,sfg:key,sfslot:slot,sfk:'dlab'}); }
     var ax=W(G.dEnd/2,G.zBot), ay=W(0,(G.zBot+zTop)/2);
     texts.push({layer:LY.text,x:ax[0]-h*2,y:ax[1]-h*3.4,t:'距離 (m)',h:h,sfg:key,sfslot:slot,sfk:'dtitle'});
-    texts.push({layer:LY.text,x:ay[0]-h*7.5,y:ay[1]-h*2,t:'標高 (m)',h:h,rot:90,sfg:key,sfslot:slot,sfk:'ztitle'});
+    texts.push({layer:LY.text,x:ay[0]-h*7.5,y:ay[1]-h*2,t:'標高 (m)',h:h,rot:Math.PI/2,sfg:key,sfslot:slot,sfk:'ztitle'});
     // --- 地形断面（破線）・すべり面（太め）・ピッチの目印（標高値の文字は v1.06 で出さない＝グリッドで読める）
     var gp=[]; for(i=0;i<SM.length;i++){ if(SM[i].z==null) continue; gp.push(W(SM[i].d,SM[i].z)); }
     if(gp.length>1) strokes.push({layer:LY.ground,pts:gp,sfg:key,sfslot:slot,sfk:'ground'});   // 茶（v1.07）・実線（v1.08。v1.05〜07 は破線）
@@ -7465,9 +7465,12 @@
         ink([[[tip[0]-hl*Math.cos(ang-0.4),tip[1]-hl*Math.sin(ang-0.4)],tip,[tip[0]-hl*Math.cos(ang+0.4),tip[1]-hl*Math.sin(ang+0.4)]]],col); }
       // v0.86: 縦は円の中心に揃え（ftext は左上基準なので上端 = 中心 + h/2）、
       //   横の隙間は文字高に比例（h*0.1）。画面・DXF と同じ式。
-      // v1.08 丸数字: 番号を円の中心に（注釈は塗りを持たないので円＋中央の番号）
+      // v1.08 丸数字: 番号を円の中心に（注釈は塗りを持たないので円＋中央の番号）。
+      // v1.09: 読み手は /TSPt の無い文字を **/Rect の中心**に中央そろえで置く（先方 v0.57.2）。
+      //   ftext の /Rect は「幅 = max(h, 文字幅) + 0.4h」「高さ = 1.25h」「上の余白 0.2h」で作るので、
+      //   その中心が円の中心に来る左上を逆算して渡す（ftext 自体は触らない）。
       var phH=ph.size*0.35, phLab=String(ph.no);
-      ftext(phLab, ph.x-measureTextW(phLab,phH)/2, ph.y+phH*0.5, phH, col);
+      ftext(phLab, ph.x-(Math.max(phH,measureTextW(phLab,phH))+phH*0.4)/2, ph.y+phH*0.425, phH, col);
       // 写真の属性（番号・方位・メモ）を注釈として持たせる（v0.35）。
       // 図形ではなく属性情報なので Hidden(/F 2) の Text 注釈にし、/Subj(photo) で
       // 種別を明示する。読み手はこれを拾って Rhino のユーザーテキスト等に移せる。
