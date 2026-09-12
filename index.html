@@ -413,6 +413,17 @@
   #modal.anchored #mColorRow{order:2;}
   #modal.anchored #mSizeRow{order:3;}
   #modal.anchored #mPhotoRow{order:4;}
+  /* v1.12 写真・走向傾斜のボタンは横並びで同じ幅。写真の控えと方位はその下 */
+  #mPhotoRow{display:flex;gap:7px;}
+  #mPhotoRow>button{flex:1;min-width:0;white-space:nowrap;}
+  #mPhotoRow>button.hidden{display:none;}
+  /* v1.12 文字高さ: 小中大とスライダーを 1 行に */
+  .hRow1{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;}
+  .hRow1 .hPre{flex:0 0 auto;min-width:40px;font-size:13px;}
+  .hRow1 .hSep{width:1px;height:22px;background:var(--line);margin:0 2px;flex:0 0 auto;}
+  .hRow1 .trk{flex:1 1 60px;min-width:60px;}
+  .hRow1 .szVal{flex:0 0 auto;min-width:44px;text-align:right;}
+  #photoPrev{max-height:110px;}
   #modal.anchored #sdHint{order:4;}
   /* v1.10 走向傾斜モード。ON は記入欄の縁と同じ色で「待っている」ことを示す */
   #btnSD.on{background:var(--acc);color:#17202a;border-color:var(--acc);}
@@ -819,13 +830,12 @@
   <h3 id="modalTitle">テキストを追加</h3>
   <div id="mTextWrap">
     <textarea id="txtInput" placeholder="例: 崩壊地 頭部 / 湧水 / 亀裂 幅0.3m など"></textarea>
-    <div class="frow" id="mHRow"><label>文字高さ<span class="hint2">テキストと旗揚げで共通</span></label>
-      <div class="szBox" style="flex-wrap:wrap;">
-        <div style="display:flex;gap:6px;width:100%;">
-          <button class="szBtn hPre" data-k="0.7" type="button" style="flex:1;min-width:0;font-size:13px;">小</button>
-          <button class="szBtn hPre" data-k="1" type="button" style="flex:1;min-width:0;font-size:13px;">中</button>
-          <button class="szBtn hPre" data-k="1.7" type="button" style="flex:1;min-width:0;font-size:13px;">大</button>
-        </div>
+    <div class="frow" id="mHRow" title="テキストと旗揚げで共通"><label>文字高さ</label>
+      <div class="szBox hRow1">
+        <button class="szBtn hPre" data-k="0.7" type="button">小</button>
+        <button class="szBtn hPre" data-k="1" type="button">中</button>
+        <button class="szBtn hPre" data-k="1.7" type="button">大</button>
+        <span class="hSep"></span>
         <button class="szBtn" id="txtHDn" type="button">−</button>
         <div class="trk" id="txtHR"><div class="fill"></div><div class="thumb"></div></div>
         <button class="szBtn" id="txtHUp" type="button">＋</button>
@@ -842,7 +852,7 @@
       <span class="szVal" id="szVal">10 m</span>
     </div>
     <input type="number" id="symSizeIn" class="hidden" step="0.5" min="0.1"></div>
-  <div class="frow" id="mPhotoRow"><label>写真</label><button id="btnPhoto">📷 写真を追加</button><button id="btnPhotoDel" class="ghost hidden">削除</button><button id="btnSD" title="AtomS3R から走向傾斜を受け取る">📐 走向傾斜</button></div>
+  <div class="frow" id="mPhotoRow"><button id="btnPhoto">📷 写真を追加</button><button id="btnPhotoDel" class="ghost hidden" title="写真を外す（文字だけ残す）">写真を外す</button><button id="btnSD" title="AtomS3R から走向傾斜を受け取る">📐 走向傾斜</button></div>
   <div class="muted2" id="sdHint" style="display:none;">AtomS3R のボタンを押すと、この下の欄に走向傾斜が入ります（キーボード入力は受け付けません）</div>
   <img id="photoPrev" alt="">
   <div id="mDirWrap" style="display:none;">
@@ -860,8 +870,7 @@
         <button id="dirClear" class="ghost">方位なしにする</button>
       </div>
     </div>
-    <div class="frow"><label>メモ</label></div>
-    <textarea id="noteIn" placeholder="撮影メモ（任意）" style="height:48px;"></textarea>
+    <textarea id="noteIn" class="hidden"></textarea><!-- v1.12 メモは文字欄（txtInput）に統合。要素は互換のため残す -->
   </div>
   <div class="modalBtns">
     <button id="mDelete" class="danger hidden">削除</button>
@@ -2453,7 +2462,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.11';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.12';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3101,11 +3110,18 @@
       ctx.beginPath(); ctx.moveTo(tipx,tipy); ctx.lineTo(tipx-hl*Math.cos(ang-0.4),tipy-hl*Math.sin(ang-0.4));
       ctx.moveTo(tipx,tipy); ctx.lineTo(tipx-hl*Math.cos(ang+0.4),tipy-hl*Math.sin(ang+0.4)); ctx.stroke(); }
     // v1.08 写真の丸数字: 紫の丸（半径は番号が入る大きさ）に白い番号（利用者指定「白抜き丸数字」）
-    var lab=String(ph.no), rr=Math.max(r,Math.max(9,s*0.30));
+    // v1.12 利用者指定「大きすぎる」→ 半径を約 3/4 に（max(9, s*0.30) → max(8, s*0.22)）
+    var lab=String(ph.no), rr=Math.max(r,Math.max(8,s*0.22));
     ctx.fillStyle=col; ctx.strokeStyle='#fff'; ctx.lineWidth=Math.max(1.5,lw(1)); ctx.beginPath(); ctx.arc(p[0],p[1],rr,0,7); ctx.fill(); ctx.stroke();
     if(NOTXT)return;
-    var fpx=Math.max(9,rr*(lab.length>=3?0.9:1.25)); ctx.font='700 '+fpx+'px ui-monospace,monospace';
+    var fpx=Math.max(8,rr*(lab.length>=3?0.9:1.25)); ctx.font='700 '+fpx+'px ui-monospace,monospace';
     ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff'; ctx.fillText(lab,p[0],p[1]+fpx*0.05);
+    // v1.12 キャプション（note）を丸の下に。写真とテキストの統合で、文字はここに入る
+    if(ph.note){ var cpx=Math.max(10,ph.size*0.35*S.V.scale), lines=String(ph.note).split(String.fromCharCode(10)), k;
+      ctx.font='600 '+cpx+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top';
+      for(k=0;k<lines.length;k++){ var cy=p[1]+rr+cpx*0.35+k*cpx*1.2;
+        ctx.lineWidth=Math.max(2,cpx*0.18); ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.strokeText(lines[k],p[0],cy);
+        ctx.fillStyle=col; ctx.fillText(lines[k],p[0],cy); } }
     ctx.textAlign='left'; ctx.textBaseline='top'; }
   function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
   function accent(){ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#f5a524'; }
@@ -5279,12 +5295,14 @@
   document.getElementById('polyBack').onclick=function(){ if(S.poly){ S.poly.pts.pop(); if(!S.poly.pts.length)S.poly=null; updatePolyBar(); render(); } };
 
   // ---- 編集モーダル（テキスト/旗揚げ/記号/写真 共用） ----
-  var M={mode:null,editIdx:-1,xy:null,photo:null,layer:0};
+  var M={mode:null,editIdx:-1,xy:null,photo:null,layer:0,phDir:null,phPitch:null,phSrc:null};   // v1.12 phDir/phPitch/phSrc: 文字欄で付けた写真の方位
   var modalBack=document.getElementById('modalBack');
   function el(id){ return document.getElementById(id); }
   function openModal(mode,idx,xy){ resetPointerState(); M.mode=mode; M.editIdx=(idx==null?-1:idx); M.xy=xy||null; M.photo=null; M.layer=S.layer;
+    M.phDir=null; M.phPitch=null; M.phSrc=null;
     var isTL=(mode==='text'||mode==='leader');
-    el('mTextWrap').style.display=(isTL||mode==='sym')?'block':'none';
+    // v1.12 写真ポイントも文字欄（＝キャプション）を持つ。文字高さは写真では使わない（size から決まる）
+    el('mTextWrap').style.display=(isTL||mode==='sym'||mode==='photo')?'block':'none';
     el('mHRow').style.display=isTL?'flex':'none';
     el('mColorRow').style.display=(mode==='photo')?'none':'flex';
     el('mSizeRow').style.display=(mode==='sym'||mode==='photo')?'flex':'none';
@@ -5311,6 +5329,7 @@
     else if(mode==='sym'){ var sy=S.symbols[idx]; M.layer=sy.layer;
       el('symSizeIn').value=sy.size; el('txtInput').value=sy.label||''; }
     else if(mode==='photo'){ var ph=S.photos[idx]; el('symSizeIn').value=ph.size;
+      el('txtInput').value=ph.note||''; el('txtInput').placeholder='キャプション（丸数字の下に出ます・任意）';   // v1.12
       el('dirIn').value=(ph.dir==null?'':Math.round(ph.dir)); el('noteIn').value=ph.note||'';
       el('pitchIn').value=(ph.pitch==null?'':Math.round(ph.pitch));
       el('dirSrcLbl').textContent={live:'／撮影時に自動取得',EXIF:'／EXIF から',
@@ -5482,15 +5501,29 @@
     M={mode:null,editIdx:-1,xy:null,photo:null,layer:0}; }
   function buildMSwatch(){ var c=el('mswatch'); c.innerHTML=''; LAYERS.forEach(function(L,i){ var d=document.createElement('div'); d.className='sw'+(i===M.layer?' sel':''); d.style.background=L.color; d.onclick=function(){ M.layer=i; [].forEach.call(c.children,function(x,k){x.classList.toggle('sel',k===i);}); }; c.appendChild(d); }); }
   function refreshPhotoPrev(){ var p=el('photoPrev');
-    if((M.mode==='text'||M.mode==='photo')&&M.photo){ p.src=M.photo; p.style.display='block'; }
-    else p.style.display='none';
-    el('btnPhotoDel').classList.toggle('hidden',!(M.mode==='text'&&M.photo)); }
+    var has=((M.mode==='text'||M.mode==='photo')&&M.photo);
+    if(has){ p.src=M.photo; p.style.display='block'; } else p.style.display='none';
+    el('btnPhotoDel').classList.toggle('hidden',!(M.mode==='text'&&M.photo));
+    // v1.12: 文字欄で写真を付けたら、その場で番号・方位・ダイヤルが出る（撮影後に方位を直せる）
+    if(M.mode==='text'){
+      var newPh=(M.photo&&M.editIdx<0);   // 新しく写真ポイントになる
+      el('mDirWrap').style.display=newPh?'block':'none';
+      el('btnPhoto').textContent=M.photo?'📷 撮り直す':'📷 写真を追加';
+      el('txtInput').placeholder=M.photo?'キャプション（丸数字の下に出ます・任意）':'例: 崩壊地 頭部 / 湧水 / 亀裂 幅0.3m など';
+      if(newPh){ el('photoNoIn').value=S.photoSeq; el('modalTitle').textContent='写真ポイント P-'+S.photoSeq+'（文字はキャプション）'; }
+      else if(M.editIdx<0) el('modalTitle').textContent='テキストを追加'; } }
   // pickImage の戻り値は File（標準カメラ/ライブラリ）または {dataUrl,...}
   // （アプリ内カメラ）の 2 通り。どちらでも dataURL にする（v0.37）。
   function shotToDataURL(f){
     if(f&&typeof f==='object'&&f.dataUrl) return Promise.resolve(f.dataUrl);
     return fileToDataURL(f,1600,0.82); }
-  el('btnPhoto').onclick=function(){ pickImage(function(f){ shotToDataURL(f).then(function(u){ M.photo=u; refreshPhotoPrev(); }); }); };
+  el('btnPhoto').onclick=function(){
+    // v1.12: 写真ツールと同じ手順（コンパスの許可 → 撮る → EXIF/撮影時の方位）で方位も取る
+    ensureCompass().then(function(){ pickImage(function(f){ showLoad('写真を処理中…');
+      preparePhoto(f).then(function(r){ hideLoad(); M.photo=r.u; M.phDir=r.hd; M.phPitch=r.pitch; M.phSrc=(r.hd!=null?r.src:null);
+        if(M.mode==='text'&&M.editIdx<0){ el('dirIn').value=(r.hd!=null)?Math.round(r.hd):''; el('pitchIn').value=(r.pitch!=null)?Math.round(r.pitch):'';
+          var sl=el('dirSrcLbl'); if(sl) sl.textContent=(r.hd!=null)?({live:'（撮影時の方位）',EXIF:'（EXIF の方位）',compass:'（参考: 直後のコンパス）'}[r.src]||''):'（方位なし・ダイヤルで指定できます）'; }
+        refreshPhotoPrev(); if(M.mode==='text'&&M.editIdx<0) drawDial(); }); }); }); };
   el('btnPhotoDel').onclick=function(){ M.photo=null; refreshPhotoPrev(); };
   el('photoInput2').onchange=pickHandler;
   el('mCancel').onclick=closeModal;
@@ -5505,8 +5538,20 @@
     // v0.47: どちらのツールで決めた高さも両方に覚えさせる（次に開く側とそろう）
     if(M.mode==='text'||M.mode==='leader'){ S.lastH.text=h; S.lastH.leader=h; }
     if(M.mode==='text'){ if(!txt&&!M.photo){ closeModal(); return; }
-      if(M.editIdx>=0){ var t=S.texts[M.editIdx]; t.t=txt; t.h=h; t.layer=M.layer; t.photo=M.photo; }
-      else { var nt={id:uid(),x:M.xy[0],y:M.xy[1],t:txt,h:h,layer:M.layer,photo:M.photo}; S.texts.push(nt); pushHist({op:'add',arr:'texts',id:nt.id}); } }
+      if(M.editIdx>=0){ var t=S.texts[M.editIdx]; t.t=txt; t.h=h; t.layer=M.layer; t.photo=M.photo; }   // 従来のテキスト付き写真はそのまま（後方互換）
+      else if(M.photo){
+        // v1.12: 文字欄で写真を付けたら、テキストではなく**写真ポイント**を作る（文字はキャプション）
+        var dv2=el('dirIn').value.trim(), nd2=(dv2==='')?null:(((parseFloat(dv2)||0)%360)+360)%360;
+        var pv2=el('pitchIn').value.trim(), np2=(pv2==='')?null:Math.max(-90,Math.min(90,parseFloat(pv2)||0));
+        var nv2=el('photoNoIn').value.trim(), no2=(nv2!=='')?Math.max(0,parseInt(nv2,10)||0):S.photoSeq;
+        if(S.photoSeq<=no2) S.photoSeq=no2+1;
+        var psz2=(S.lastH&&S.lastH.photo)||defaultSizeM(30);
+        var ph2={id:uid(),no:no2,x:M.xy[0],y:M.xy[1],dir:nd2,pitch:np2,
+                 dirSrc:(nd2==null)?null:((M.phDir!=null&&Math.abs(nd2-Math.round(M.phDir))<0.5&&np2===(M.phPitch!=null?Math.round(M.phPitch):null))?M.phSrc:'manual'),
+                 size:psz2,img:M.photo,note:txt};
+        S.photos.push(ph2); pushHist({op:'add',arr:'photos',id:ph2.id});
+        toast(pno(ph2)+' を追加'+(txt?'（キャプション付き）':'')); }
+      else { var nt={id:uid(),x:M.xy[0],y:M.xy[1],t:txt,h:h,layer:M.layer,photo:null}; S.texts.push(nt); pushHist({op:'add',arr:'texts',id:nt.id}); } }
     else if(M.mode==='leader'){ if(!txt){ closeModal(); return; }
       if(M.editIdx>=0){ var ld=S.leaders[M.editIdx]; ld.t=txt; ld.h=h; ld.layer=M.layer; ld.len=measureTextW(txt,h)+h*0.6; }
       else { var nl={id:uid(),pts:M.xy,t:txt,h:h,layer:M.layer,len:measureTextW(txt,h)+h*0.6}; S.leaders.push(nl); pushHist({op:'add',arr:'leaders',id:nl.id}); } }
@@ -5520,7 +5565,7 @@
       var pv=el('pitchIn').value.trim(), np=(pv==='')?null:Math.max(-90,Math.min(90,parseFloat(pv)||0));
       // 手で変えたら取得元を manual にする（以後 自動値で上書きしない）
       if(nd!==ph.dir||np!==ph.pitch) ph.dirSrc='manual';
-      ph.dir=nd; ph.pitch=np; ph.note=el('noteIn').value;
+      ph.dir=nd; ph.pitch=np; ph.note=txt;   // v1.12 キャプションは文字欄から
       var nv=el('photoNoIn').value.trim();
       if(nv!==''){ var nn=Math.max(0,parseInt(nv,10)||0); ph.no=nn; if(S.photoSeq<=nn) S.photoSeq=nn+1; } } }
     closeModal(); render(); };
@@ -5693,7 +5738,9 @@
   }
 
   // ---- タップ動作 ----
-  function tapText(px,py){ var ti=hitText(px,py,16); if(ti>=0){ openModal('text',ti,null); } else { var w=s2w(px,py); openModal('text',null,[w[0],w[1]]); } }
+  function tapText(px,py){
+    var pi=hitPhoto(px,py); if(pi>=0){ openModal('photo',pi,null); return; }   // v1.12 写真ポイントも文字ツールで直せる
+    var ti=hitText(px,py,16); if(ti>=0){ openModal('text',ti,null); } else { var w=s2w(px,py); openModal('text',null,[w[0],w[1]]); } }
   function tapLeader(px,py){ var li=hitLeader(px,py);
     if(S.leaderTip==null&&li>=0){ openModal('leader',li,null); return; }
     var w=s2w(px,py);
@@ -5747,19 +5794,21 @@
         o+=2+ln; }
       return null; }catch(e){ return null; } }).catch(function(){ return null; }); }
   // f は File（標準カメラ／ライブラリ）または {dataUrl,dir,pitch,src}（アプリ内カメラ）
-  function handleNewPhotoPoint(f,xy){ showLoad('写真を処理中…');
+  // v1.12: 写真の下ごしらえ（画像の縮小と方位の取得）を写真ツールと文字欄で共用する。
+  //   アプリ内カメラはシャッターの瞬間に方位・俯角が確定しているのでそれを使う。
+  //   標準カメラ経路は EXIF → 直後のコンパスの順で拾うが、後者は撮影の瞬間の値では
+  //   ないので参考値扱い（src で区別し、トーストにも出す）。
+  function preparePhoto(f){
     var isShot=(f&&typeof f==='object'&&f.dataUrl);
-    // アプリ内カメラはシャッターの瞬間に方位・俯角が確定しているのでそれを使う。
-    // 標準カメラ経路は EXIF → 直後のコンパスの順で拾うが、後者は撮影の瞬間の値では
-    // ないので参考値扱い（src で区別し、トーストにも出す）。
-    var prep=isShot
+    return isShot
       ? Promise.resolve({u:f.dataUrl,hd:f.dir,pitch:f.pitch,src:f.src||'live'})
       : fileToDataURL(f,1600,0.82).then(function(u){
           if(!u) toast('画像を読み込めませんでした（位置のみ記録します）',true);
           return exifGpsDir(f).then(function(ed){ if(ed!=null)return {u:u,hd:ed,pitch:null,src:'EXIF'};
             return sampleHeading(1400).then(function(hd){ return {u:u,hd:hd,pitch:null,src:'compass'}; }); });
-        });
-    prep.then(function(r0){
+        }); }
+  function handleNewPhotoPoint(f,xy){ showLoad('写真を処理中…');
+    preparePhoto(f).then(function(r0){
       // 前回の写真サイズを引き継ぐ。初回だけ画面の縮尺から決める。
       var psz=(S.lastH&&S.lastH.photo)||defaultSizeM(30);
       var ph={id:uid(),no:S.photoSeq++,x:xy[0],y:xy[1],dir:r0.hd,pitch:r0.pitch,
@@ -7218,7 +7267,11 @@
       //   baseline = 中心 - h*0.35）、横の隙間は文字高に比例（h*0.1）。画面・PDF と同じ式。
       //   従来は下に size*0.4（実測 4.0m）も離れており、円中心から文字まで 5.25m あった。
       var phH6=ph.size*0.35, phLab6=String(ph.no);
-      dxf+=wText(l,ph.x-cadTextW(phLab6,phH6)/2,ph.y-phH6*0.35,phH6,phLab6); });   // v1.08 円の中心に
+      dxf+=wText(l,ph.x-cadTextW(phLab6,phH6)/2,ph.y-phH6*0.35,phH6,phLab6);   // v1.08 円の中心に
+      // v1.12 キャプション（note）を円の下に 1 行ずつ（画面と同じ: 文字高 size*0.35・中央そろえ）
+      if(ph.note){ var cl6=String(ph.note).split(String.fromCharCode(10)), k6;
+        for(k6=0;k6<cl6.length;k6++){ if(!cl6[k6]) continue;
+          dxf+=wText(l,ph.x-cadTextW(cl6[k6],phH6)/2,ph.y-r-phH6*(1.05+1.2*k6),phH6,cl6[k6]); } } });
     dxf+=p(0,'ENDSEC');
 
     // ---- OBJECTS（R13+ 必須の名前付きオブジェクト辞書）--------------------
@@ -7596,6 +7649,11 @@
       //   その中心が円の中心に来る左上を逆算して渡す（ftext 自体は触らない）。
       var phH=ph.size*0.35, phLab=String(ph.no);
       ftext(phLab, ph.x-(Math.max(phH,measureTextW(phLab,phH))+phH*0.4)/2, ph.y+phH*0.425, phH, col);
+      // v1.12 キャプション（note）を円の下に 1 行ずつ（/Rect の中心が円の真下に来るよう左上を逆算）
+      if(ph.note){ var cl=String(ph.note).split(String.fromCharCode(10)), kc;
+        for(kc=0;kc<cl.length;kc++){ if(!cl[kc]) continue;
+          var cyc=ph.y-r-phH*(0.85+1.2*kc);   // 行の中心の高さ
+          ftext(cl[kc], ph.x-(Math.max(phH,measureTextW(cl[kc],phH))+phH*0.4)/2, cyc+phH*0.425, phH, col); } }
       // 写真の属性（番号・方位・メモ）を注釈として持たせる（v0.35）。
       // 図形ではなく属性情報なので Hidden(/F 2) の Text 注釈にし、/Subj(photo) で
       // 種別を明示する。読み手はこれを拾って Rhino のユーザーテキスト等に移せる。
@@ -7856,7 +7914,10 @@
       // v0.86: 焼き込みも他の 3 経路と同じ置き方に（label は ftext と同じ左上基準）。
       //   縦は円の中心に揃え（上端 = 中心 + h/2）、横の隙間は文字高に比例（h*0.1）。
       var phHo=ph.size*0.35, phLabO=String(ph.no);
-      label('T'+ph.id, ph.x-measureTextW(phLabO,phHo)/2, ph.y+phHo*0.5); });   // v1.08 円の中心に
+      label('T'+ph.id, ph.x-measureTextW(phLabO,phHo)/2, ph.y+phHo*0.5);   // v1.08 円の中心に
+      if(ph.note){ var clo=String(ph.note).split(String.fromCharCode(10)), ko;
+        for(ko=0;ko<clo.length;ko++){ if(!clo[ko]) continue;
+          label('N'+ph.id+'_'+ko, ph.x-measureTextW(clo[ko],phHo)/2, ph.y-r-phHo*(0.85+1.2*ko)+phHo*0.5); } } });   // v1.12 キャプション
     ops+='Q\n';
     return {ops:ops, w2p:w2p};
   }
@@ -7865,7 +7926,8 @@
     S.texts.forEach(function(t){ if(t.t)out['T'+t.id]={text:t.t,h:t.h,color:(LAYERS[t.layer]||LAYERS[0]).color}; });
     S.leaders.forEach(function(ld){ out['T'+ld.id]={text:ld.t||'',h:ld.h,color:(LAYERS[ld.layer]||LAYERS[0]).color}; });
     S.symbols.forEach(function(sy){ if(sy.label)out['T'+sy.id]={text:sy.label,h:sy.size*0.45,color:(LAYERS[sy.layer]||LAYERS[0]).color}; });
-    S.photos.forEach(function(ph){ out['T'+ph.id]={text:pno(ph),h:ph.size*0.35,color:PHOTOL.color}; });
+    S.photos.forEach(function(ph){ out['T'+ph.id]={text:String(ph.no),h:ph.size*0.35,color:PHOTOL.color};   // v1.12 丸数字は番号だけ（v1.08 で画面・注釈は直したが焼き込みが P-001 のままだった）
+      if(ph.note){ String(ph.note).split(String.fromCharCode(10)).forEach(function(ln,ko){ if(ln) out['N'+ph.id+'_'+ko]={text:ln,h:ph.size*0.35,color:PHOTOL.color}; }); } });
     // v0.29: ラベルはベクター文字で描くので text/h/color だけ集める。
     // （旧: makeLabelImg で JPEG+SMask 生成 → 拡大で滲む・検索不可・容量大）
     return out;
