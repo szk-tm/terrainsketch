@@ -1096,13 +1096,14 @@
 
 <div id="phSheet"><div class="box">
   <div class="shTitle">写真の設定（📷 を再タップ）</div>
-  <div class="shRow"><span class="shLab">丸の大きさ<br><span class="muted2" id="phSzNote">新しい写真の既定</span></span>
+  <div class="shRow"><span class="shLab">丸の直径<br><span class="muted2">紙の上の大きさ</span></span>
     <div class="szBox">
-      <button class="szBtn phSzBtn" data-k="0.6" type="button" style="min-width:50px;">小</button>
-      <button class="szBtn phSzBtn" data-k="1" type="button" style="min-width:54px;">標準</button>
-      <button class="szBtn phSzBtn" data-k="1.5" type="button" style="min-width:50px;">大</button>
-      <button class="szBtn phSzBtn" data-k="2.2" type="button" style="min-width:56px;">特大</button>
+      <button class="szBtn phSzBtn" data-mm="3" type="button" style="min-width:50px;">3 mm</button>
+      <button class="szBtn phSzBtn" data-mm="5" type="button" style="min-width:54px;">5 mm</button>
+      <button class="szBtn phSzBtn" data-mm="7" type="button" style="min-width:50px;">7 mm</button>
+      <button class="szBtn phSzBtn" data-mm="10" type="button" style="min-width:56px;">10 mm</button>
     </div></div>
+  <div class="muted2" id="phSzNote">新しい写真の既定</div>
   <div class="shRow"><span class="shLab"></span><button id="phSzAll" class="ghost" type="button">今ある写真にも適用</button></div>
   <div class="shRow"><span class="shLab">矢印の長さ</span>
     <div class="szBox">
@@ -2496,7 +2497,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.13';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.14';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3442,7 +3443,8 @@
     v=v|0; return (v>=0&&v<LAYERS.length)?v:4; }
   // 寸法の幾何。プレビューと本番が同じ関数を使うので見た目が食い違わない。
   // 戻り値: {lines:[[[x,y],..],..], texts:[{t,x,y,h,rot}], h:文字高}
-  function dimParts(P){
+  // opt.slope(A,B) → 区間の地表に沿った長さ[m]（無ければ null）。v1.14。渡さなければ従来どおり水平だけ。
+  function dimParts(P,opt){ var slopeFn=(opt&&opt.slope)||null;
     var h=dimTextH(), off=h*dimOffR(), ext=h*DIM_EXT, hl=h*dimArrowR();
     var out={lines:[],texts:[],segs:[],h:h}, i, segL=[];
     // v0.45: 区間ごとに線をためる（out.lines は全区間を連結したもの）。
@@ -3476,7 +3478,8 @@
         while(rot>Math.PI) rot-=2*Math.PI; }
       var ux=Math.cos(rot), uy=Math.sin(rot);      // 文字の進む向き
       var vx=-uy, vy=ux;                           // 文字の上向き
-      var t=dimLabelText(len), tw=measureTextW(t,h);
+      var sl=slopeFn?slopeFn(A,B):null;
+      var t=dimLabelText(len)+((sl!=null)?('（地表 '+dimLabelText(sl)+'）'):''), tw=measureTextW(t,h);   // v1.14 地表に沿った長さを併記
       var cx=(A[0]+B[0])/2+nx*h*DIM_TXT, cy=(A[1]+B[1])/2+ny*h*DIM_TXT;
       var txo={t:t,h:h,rot:rot,
         x:cx-ux*tw/2-vx*h*0.35, y:cy-uy*tw/2-vy*h*0.35};
@@ -3488,7 +3491,7 @@
   function measToDim(){
     var P=measPts();
     if(P.length<2){ toast('頂点が 2 つ以上必要です',true); return; }
-    var D=dimParts(P), g=uid(), items=[], lay=dimLayerR(), lwm=dimLwmR(), i;
+    var D=dimParts(P,{slope:function(A,B){ return slopeLen([A,B]); }}), g=uid(), items=[], lay=dimLayerR(), lwm=dimLwmR(), i;   // v1.14
     if(!D.texts.length){ toast('寸法にできる区間がありません',true); return; }
     // v0.45: 区間ごとに作る。dseg（区間番号）で意味の記録と対応づける。
     // 無名ブロックは区間単位なので、どの線がどの寸法のものかが分かる必要がある。
@@ -3522,13 +3525,17 @@
         var o=arr.splice(i,1)[0]; items.push({op:'del',arr:lists[k],obj:o,index:i}); } } }
     if(items.length) pushHist({op:'batch',items:items});
     return items.length; }
+  // v1.14 地表に沿った長さ（DEM があるときだけ）。2 点以上・DEM 有りで数が返る。無ければ null。
+  function slopeLen(P){ if(!P||P.length<2||!activeDem()) return null;
+    var SM=profileSamples(P,Math.max(40,Math.min(400,Math.round(polyLen(P)/0.5))));
+    var st=profStats(SM); return (st&&st.n>1)?st.surf:null; }
   function updateMeasBar(){
     var b=document.getElementById('measBar'); if(!b)return;
     var open=(S.tool==='measure')&&!profOpen();
     b.classList.toggle('show',open);
-    var P=measPts(), L=polyLen(P);
+    var P=measPts(), L=polyLen(P), SL=slopeLen(P);
     document.getElementById('measInfo').textContent=
-      (P.length?('頂点 '+P.length+'・水平 '+fmtDist(L)):'地図をタップして測線を引きます');
+      (P.length?('頂点 '+P.length+'・水平 '+fmtDist(L)+(SL!=null?('（地表 '+fmtDist(SL)+'）'):'')):'地図をタップして測線を引きます');
     var pb=document.getElementById('measProf');
     if(pb) pb.disabled=(P.length<PROF_MIN_PTS); }
   // ---- 地すべり面モード（v0.95: A ブロック範囲線 / B 主測線との交点）----
@@ -5584,7 +5591,7 @@
         var pv2=el('pitchIn').value.trim(), np2=(pv2==='')?null:Math.max(-90,Math.min(90,parseFloat(pv2)||0));
         var nv2=el('photoNoIn').value.trim(), no2=(nv2!=='')?Math.max(0,parseInt(nv2,10)||0):S.photoSeq;
         if(S.photoSeq<=no2) S.photoSeq=no2+1;
-        var psz2=(S.lastH&&S.lastH.photo)||defaultSizeM(30);
+        var psz2=(S.lastH&&S.lastH.photo)||phDefaultSize();   // v1.14
         var ph2={id:uid(),no:no2,x:M.xy[0],y:M.xy[1],dir:nd2,pitch:np2,
                  dirSrc:(nd2==null)?null:((M.phDir!=null&&Math.abs(nd2-Math.round(M.phDir))<0.5&&np2===(M.phPitch!=null?Math.round(M.phPitch):null))?M.phSrc:'manual'),
                  size:psz2,img:M.photo,note:txt,layer:M.layer};   // v1.13 キャプションは選んだ色
@@ -5849,7 +5856,7 @@
   function handleNewPhotoPoint(f,xy){ showLoad('写真を処理中…');
     preparePhoto(f).then(function(r0){
       // 前回の写真サイズを引き継ぐ。初回だけ画面の縮尺から決める。
-      var psz=(S.lastH&&S.lastH.photo)||defaultSizeM(30);
+      var psz=(S.lastH&&S.lastH.photo)||phDefaultSize();   // v1.14 既定は紙の 5 mm（図郭が無ければ画面 30px）
       var ph={id:uid(),no:S.photoSeq++,x:xy[0],y:xy[1],dir:r0.hd,pitch:r0.pitch,
               dirSrc:(r0.hd!=null?r0.src:null),size:psz,img:r0.u,note:'',layer:S.layer};   // v1.13 layer はキャプションの色
       S.photos.push(ph); pushHist({op:'add',arr:'photos',id:ph.id}); hideLoad(); render();
@@ -6009,7 +6016,19 @@
     var u=px-base[0], v=py-base[1];
     if(u>=-2&&u<=wpx+fpx&&v<=4&&v>=-fpx*1.3*lines)return i; } return -1; }
   function hitSym(px,py){ for(var i=S.symbols.length-1;i>=0;i--){ var sy=S.symbols[i],p=w2s(sy.x,sy.y),r=Math.max(12,sy.size*S.V.scale/2+6); if(Math.hypot(px-p[0],py-p[1])<=r)return i; } return -1; }
-  function hitPhoto(px,py){ for(var i=S.photos.length-1;i>=0;i--){ var ph=S.photos[i],p=w2s(ph.x,ph.y),r=Math.max(14,ph.size*S.V.scale*0.3); if(Math.hypot(px-p[0],py-p[1])<=r)return i; } return -1; }
+  function hitPhoto(px,py){ for(var i=S.photos.length-1;i>=0;i--){ var ph=S.photos[i],p=w2s(ph.x,ph.y),r=Math.max(14,ph.size*S.V.scale*0.3);
+      if(Math.hypot(px-p[0],py-p[1])<=r)return i;
+      if(hitPhotoCaption(ph,p,px,py))return i; }   // v1.14 キャプションをタップしても開く
+    return -1; }
+  // v1.14 キャプション（丸の下・中央そろえ・行ごと）の当たり。drawPhoto と同じ置き方で枡を作る。
+  function hitPhotoCaption(ph,p,px,py){ if(!ph.note) return false;
+    var s=ph.size*S.V.scale, rr=Math.max(Math.max(4,s*0.22),Math.max(8,s*0.22));
+    var cpx=Math.max(10,ph.size*phCap()*S.V.scale), lines=String(ph.note).split(String.fromCharCode(10)), k;
+    var top=p[1]+rr+cpx*0.35, hm=ph.size*phCap();
+    for(k=0;k<lines.length;k++){ if(!lines[k]) continue;
+      var w=Math.max(20,measureTextW(lines[k],hm)*S.V.scale)+12, y0=top+k*cpx*1.2, y1=y0+cpx*1.15;
+      if(px>=p[0]-w/2&&px<=p[0]+w/2&&py>=y0-4&&py<=y1+4) return true; }
+    return false; }
   // ---- 消しゴム（v0.46）------------------------------------------------------
   // 有効範囲を画面 px で持つ（CLOSE_PX / SNAP_PX と同じ流儀。ズームで手触りが変わらない）。
   var ERASE_R=24, eraseTimer=0;
@@ -6499,10 +6518,23 @@
   // ---- v1.13 写真の設定（丸の大きさ・矢印の長さ・文字の大きさ）----------------------
   function phArrow(){ var v=+S.phArrow; return (isFinite(v)&&v>0)?v:1; }
   function phCap(){ var v=+S.phCap; return (isFinite(v)&&v>0)?v:0.35; }
-  function phBase(){ return defaultSizeM(30); }   // 現在の縮尺での「標準」（写真ツールの既定と同じ）
-  function syncPhSheet(){ var base=phBase(), cur=(S.lastH&&S.lastH.photo)||base;
-    [].forEach.call(document.querySelectorAll('.phSzBtn'),function(b){ var k=parseFloat(b.getAttribute('data-k'));
-      b.classList.toggle('on',Math.abs(base*k-cur)<=Math.max(0.05,cur*0.08)); });
+  // v1.14 図面の縮尺: 紙の 1 mm が現地の何 m か。図郭付きラスタ（pgAff: pt → m）から。無ければ null。
+  //   拡大率に依らないので、写真の大きさの選択肢が「いま画面でどれだけ拡大しているか」で動かない。
+  function paperMmM(){ var i; for(i=0;i<S.rasters.length;i++){ var r=S.rasters[i];
+      if(r&&r.pgAff&&r.pageWpt){ var a=r.pgAff, mPerPt=Math.hypot(a.a,a.d); if(mPerPt>0) return mPerPt*72/25.4; } }
+    return null; }
+  var PH_D=0.44;   // 丸の直径は size のこの倍（半径 0.22）
+  // 直径 mm（紙）→ size[m]。図郭が無ければ従来の「画面で 30px」。
+  function phSizeForMm(mm){ var k=paperMmM(); return (k!=null)?Math.round(mm*k/PH_D*100)/100:defaultSizeM(30); }
+  function phDefaultSize(){ return phSizeForMm(5); }   // 新しい写真の既定＝直径 5 mm（図郭が無ければ画面 30px）
+  function phBase(){ return phDefaultSize(); }
+  function syncPhSheet(){ var cur=(S.lastH&&S.lastH.photo)||phBase(), k=paperMmM();
+    [].forEach.call(document.querySelectorAll('.phSzBtn'),function(b){ var mm=parseFloat(b.getAttribute('data-mm'));
+      b.classList.toggle('on',Math.abs(phSizeForMm(mm)-cur)<=Math.max(0.05,cur*0.06)); });
+    var n=document.getElementById('phSzNote');
+    if(n){ if(k!=null){ var den=Math.round(k*1000), mmNow=cur*PH_D/k;
+        n.textContent='図面の縮尺 1:'+den+'  →  いまの既定は直径 '+mmNow.toFixed(1)+' mm（現地 '+(cur*PH_D).toFixed(1)+' m・丸の中心から矢印まで '+cur.toFixed(1)+' m）'; }
+      else n.textContent='図郭のない地図なので画面の大きさを基準にしています（既定 '+cur.toFixed(1)+' m）。図郭付きの GeoPDF を読むと紙の mm で選べます'; }
     [].forEach.call(document.querySelectorAll('.phArBtn'),function(b){ b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-k'))-phArrow())<1e-6); });
     [].forEach.call(document.querySelectorAll('.phCpBtn'),function(b){ b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-k'))-phCap())<1e-6); });
     var n=document.getElementById('phSzNote'); if(n) n.textContent='新しい写真の既定: '+cur.toFixed(1)+' m'; }
@@ -6510,7 +6542,7 @@
   document.getElementById('phSheetClose').onclick=function(){ document.getElementById('phSheet').classList.remove('open'); };
   document.getElementById('phSheet').addEventListener('click',function(e){ if(e.target===this) this.classList.remove('open'); });
   [].forEach.call(document.querySelectorAll('.phSzBtn'),function(b){ b.onclick=function(){
-    S.lastH=S.lastH||{}; S.lastH.photo=Math.round(phBase()*parseFloat(b.getAttribute('data-k'))*10)/10; syncPhSheet(); }; });
+    S.lastH=S.lastH||{}; S.lastH.photo=phSizeForMm(parseFloat(b.getAttribute('data-mm'))); syncPhSheet(); }; });   // v1.14 紙の mm
   document.getElementById('phSzAll').onclick=function(){ var sz=(S.lastH&&S.lastH.photo)||phBase(), items=[];
     S.photos.forEach(function(ph){ if(ph.size!==sz){ items.push({op:'set',arr:'photos',id:ph.id,key:'size',from:ph.size,to:sz}); ph.size=sz; } });
     if(items.length){ pushHist({op:'batch',items:items}); markDirty(); render(); toast(items.length+' 枚の写真を '+sz.toFixed(1)+' m にしました'); }
