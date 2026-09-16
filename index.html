@@ -2496,10 +2496,9 @@
   // v1.16 記号の局所座標（+y 北）を時計回り rot 度で回す
   function symRot(sy,ux,uy){ if(!symGeo(sy)) return [ux,uy];
     var a=sy.rot*Math.PI/180, c=Math.cos(a), s=Math.sin(a); return [ux*c+uy*s, -ux*s+uy*c]; }
-  // v1.16 ラベルの基点（world）。既定は右横、走向傾斜マークは刻みの先
-  function symLabelXY(sy){ var r=sy.size/2;
-    if(sy.sym==='sd'&&symGeo(sy)){ var d=symRot(sy,0,-1); var L=r*0.45+sy.size*0.22; return [sy.x+d[0]*L, sy.y+d[1]*L]; }
-    return [sy.x+r*1.25, sy.y]; }
+  // v1.16 ラベルの基点（world）。v1.17: 走向傾斜マークも**記号の横**（刻みは短く、長い表記が重なるため）。
+  //   ラベルは表記そのもの（N25°E 89°SE）で、傾斜角だけを刻みの先に出すことはしない。
+  function symLabelXY(sy){ var r=sy.size/2; return [sy.x+r*1.25, sy.y]; }
   function symPrims(sy){ var u=symUnits(sy.sym), r=sy.size/2, out=[], i, k, pts, q;
     // v1.16 回転（時計回り rot 度）。ここに直接書く＝symPrims だけ取り出しても動く（旧スイートのハーネス）
     var ra=(sy.rot!=null&&isFinite(sy.rot))?sy.rot*Math.PI/180:0, rc=Math.cos(ra), rs=Math.sin(ra);
@@ -2511,7 +2510,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.16';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.17';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5561,7 +5560,7 @@
     var pxy=(M.xy?((M.mode==='leader')?M.xy[1]:M.xy):null);
     if(o&&pxy){
       var dd=sdDipDir(o), kmm=paperMmM(), ssz=(kmm!=null)?Math.round(8*kmm*100)/100:defaultSizeM(40);
-      var sy={id:uid(),x:pxy[0],y:pxy[1],sym:'sd',size:ssz,layer:M.layer,label:String(Math.round(o.dip)),
+      var sy={id:uid(),x:pxy[0],y:pxy[1],sym:'sd',size:ssz,layer:M.layer,label:txt,   // v1.17 ラベルは表記そのもの（N25°E 89°SE）
               rot:((dd-180)%360+360)%360,sd:{strike:o.strike,dip:o.dip,quad:o.quad,text:txt}};
       S.symbols.push(sy); pushHist({op:'add',arr:'symbols',id:sy.id}); markDirty();
       sdSetHint('走向傾斜マークを置きました: '+txt+note+'（続けて測ると同じ点に重なります。別の点は記入欄を閉じて次をタップ）');
