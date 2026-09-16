@@ -2510,7 +2510,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.17';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.18';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -4977,7 +4977,26 @@
   function resetPointerState(){ // 進行中のストローク・捕捉を破棄(誤描画防止)
     Object.keys(pts).forEach(function(id){ try{ cv.releasePointerCapture&&cv.releasePointerCapture(+id); }catch(e){} });
     pts={}; S.cur=null; gesture=null; panAnchor=null; pinch=null; ptrTool=null; penDown=0; }
+  // ---- v1.18 スタイラスの横ボタン（戻る）------------------------------------------
+  // 文字を打てる所にフォーカスがあるか（⌘Z は文字の取り消しに使うので触らない）
+  function typingNow(){ var a=document.activeElement; if(!a) return false;
+    var t=(a.tagName||'').toLowerCase();
+    return t==='input'||t==='textarea'||t==='select'||a.isContentEditable===true; }
+  function penUndoToast(){ if(S.penUndoSeen) return; S.penUndoSeen=true;
+    toast('ペンのボタンで元に戻しました（もう一度押すとさらに戻ります）'); }
+  // 経路 1: Bluetooth キーボードとして ⌘Z を送る型（汎用スタイラスの多く）
+  function penUndoKey(e){
+    if(typingNow()||uiBlocking()) return;                 // 文字入力中・記入欄が開いている間は既定のまま
+    var k=(e.key||'').toLowerCase(), mod=(e.metaKey||e.ctrlKey);
+    if(mod&&k==='z'){ e.preventDefault();
+      if(e.shiftKey) redoStep(); else { undoStep(); penUndoToast(); } return; }
+    if(mod&&k==='y'){ e.preventDefault(); redoStep(); } }
+  document.addEventListener('keydown',penUndoKey,true);
+  // 経路 2: ペンの軸ボタンとして届く型（Pointer Events: barrel=2 / eraser=5）
+  function penSideBtn(e){ if(e.pointerType!=='pen') return false;   // 指・マウスでは反応しない
+    return e.button===2||e.button===5||((e.buttons&2)!==0)||((e.buttons&32)!==0); }
   function onPtrDown(e){
+    if(penSideBtn(e)){ e.preventDefault(); undoStep(); penUndoToast(); return; }   // v1.18 描かずに元に戻す
     if(uiBlocking()){ diagReject(e,'UIが開いている'); return; }
     if(e.pointerType==='pen'){ if(!PEN_SEEN){ PEN_SEEN=true; onPenDetected(); } penDown++;
       // ペンは常に 1 本目として扱う。先に着いていたパームや残留ポインタは捨てる（v0.39.3）
