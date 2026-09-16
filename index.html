@@ -2432,6 +2432,8 @@
   //   {k:'p',pts:[[x,y],..],close:?} 折れ線。2 点で close なしなら DXF は LINE のまま
   var SYMDEF={
     cir:[{k:'c',x:0,y:0,r:1}],
+    // v1.16 走向傾斜マーク（strike and dip symbol）: 走向線と、傾斜側へ出す短い刻み。向きは sy.rot で回す（パレットには出さない）
+    sd:[{k:'p',pts:[[-1,0],[1,0]]},{k:'p',pts:[[0,0],[0,-0.45]]}],
     dcir:[{k:'c',x:0,y:0,r:1},{k:'c',x:0,y:0,r:0.55}],
     tri:[{k:'p',pts:[[0,1],[-0.866,-0.5],[0.866,-0.5]],close:true}],
     sq:[{k:'p',pts:[[-1,-1],[1,-1],[1,1],[-1,1]],close:true}],
@@ -2489,15 +2491,27 @@
         out.push({k:'p',pts:pts,close:!!pr.close}); } }
     SYMU[id]=out; return out; }
   // 記号 1 個を世界座標[m]の円と折れ線に展開する。出力 3 経路はこれだけを見る。
-  function symPrims(sy){ var u=symUnits(sy.sym), r=sy.size/2, out=[], i, k, pts;
+  // v1.16 回転つきの記号か（北基準の向きが情報＝図郭正立の回転を掛けない）
+  function symGeo(sy){ return !!(sy&&sy.rot!=null&&isFinite(sy.rot)); }
+  // v1.16 記号の局所座標（+y 北）を時計回り rot 度で回す
+  function symRot(sy,ux,uy){ if(!symGeo(sy)) return [ux,uy];
+    var a=sy.rot*Math.PI/180, c=Math.cos(a), s=Math.sin(a); return [ux*c+uy*s, -ux*s+uy*c]; }
+  // v1.16 ラベルの基点（world）。既定は右横、走向傾斜マークは刻みの先
+  function symLabelXY(sy){ var r=sy.size/2;
+    if(sy.sym==='sd'&&symGeo(sy)){ var d=symRot(sy,0,-1); var L=r*0.45+sy.size*0.22; return [sy.x+d[0]*L, sy.y+d[1]*L]; }
+    return [sy.x+r*1.25, sy.y]; }
+  function symPrims(sy){ var u=symUnits(sy.sym), r=sy.size/2, out=[], i, k, pts, q;
+    // v1.16 回転（時計回り rot 度）。ここに直接書く＝symPrims だけ取り出しても動く（旧スイートのハーネス）
+    var ra=(sy.rot!=null&&isFinite(sy.rot))?sy.rot*Math.PI/180:0, rc=Math.cos(ra), rs=Math.sin(ra);
+    function RQ(ux,uy){ return ra?[ux*rc+uy*rs, -ux*rs+uy*rc]:[ux,uy]; }
     for(i=0;i<u.length;i++){
-      if(u[i].k==='c'){ out.push({k:'c',x:sy.x+u[i].x*r,y:sy.y+u[i].y*r,r:u[i].r*r}); }
+      if(u[i].k==='c'){ q=RQ(u[i].x,u[i].y); out.push({k:'c',x:sy.x+q[0]*r,y:sy.y+q[1]*r,r:u[i].r*r}); }
       else { pts=[];
-        for(k=0;k<u[i].pts.length;k++) pts.push([sy.x+u[i].pts[k][0]*r, sy.y+u[i].pts[k][1]*r]);
+        for(k=0;k<u[i].pts.length;k++){ q=RQ(u[i].pts[k][0],u[i].pts[k][1]); pts.push([sy.x+q[0]*r, sy.y+q[1]*r]); }
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.15';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.16';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3123,7 +3137,16 @@
     // 記号を描き終えたら必ず butt に戻す（破線などが太って見えるのを防ぐ）。
     ctx.lineCap='round';
     var u=symUnits(sy.sym), i, k, pp;
-    for(i=0;i<u.length;i++){
+    if(symGeo(sy)){
+      // v1.16 回転つき（走向傾斜マーク）: world で回してから画面へ。地図を回しても北基準の向きを保つ
+      var W=symPrims(sy), q;
+      for(i=0;i<W.length;i++){
+        if(W[i].k==='c'){ q=w2s(W[i].x,W[i].y); ctx.beginPath(); ctx.arc(q[0],q[1],Math.max(1,W[i].r*S.V.scale),0,7); ctx.stroke(); }
+        else { ctx.beginPath(); pp=W[i].pts;
+          for(k=0;k<pp.length;k++){ q=w2s(pp[k][0],pp[k][1]); if(k) ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]); }
+          if(W[i].close) ctx.closePath();
+          ctx.stroke(); } } }
+    else for(i=0;i<u.length;i++){
       if(u[i].k==='c'){ ctx.beginPath();
         ctx.arc(p[0]+u[i].x*r, p[1]-u[i].y*r, Math.max(1,u[i].r*r), 0, 7); ctx.stroke(); }
       else { ctx.beginPath(); pp=u[i].pts;
@@ -3134,7 +3157,8 @@
         ctx.stroke(); } }
     ctx.lineCap='butt';        // v0.49.1: 後続の描画に持ち越さない
     if(sy.label&&!NOTXT){ var fpx=Math.max(8,sy.size*0.45*S.V.scale); ctx.font='600 '+fpx+'px -apple-system,sans-serif'; ctx.textBaseline='middle';
-      ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillText(sy.label,p[0]+r*1.25+1,p[1]+1); ctx.fillStyle=col; ctx.fillText(sy.label,p[0]+r*1.25,p[1]); } }
+      var lw2=symLabelXY(sy), lp=w2s(lw2[0],lw2[1]);   // v1.16 走向傾斜マークは刻みの先・ほかは右横
+      ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillText(sy.label,lp[0]+1,lp[1]+1); ctx.fillStyle=col; ctx.fillText(sy.label,lp[0],lp[1]); } }
   function pno(ph){ return 'P-'+String(ph.no).padStart(3,'0'); }
   function drawPhoto(ph){ var p=w2s(ph.x,ph.y), col=PHOTOL.color, s=ph.size*S.V.scale, r=Math.max(4,s*0.22);
     // 方位は地理的な向きなので地図の回転に追従させる
@@ -5531,6 +5555,17 @@
       if(dw==null){ note='（偏角を出せませんでした: 磁北のままです）'; }
       else { o=sdApplyDecl(o,dw); note='（偏角 '+dw.toFixed(1)+'°W を補正）'; } }
     var txt=o?sdFormat(o):raw;
+    // v1.16: 読めた値は**走向傾斜マーク**として記入した点に置く（文字欄には入れない）。
+    //   向き: 局所座標の刻みは真南（180°）を指すので rot = 傾斜方向 - 180。走向線はそれに直交する。
+    //   大きさ: 紙の上で走向線 8 mm（図郭が無ければ画面 40px）。ラベルは傾斜角。
+    var pxy=(M.xy?((M.mode==='leader')?M.xy[1]:M.xy):null);
+    if(o&&pxy){
+      var dd=sdDipDir(o), kmm=paperMmM(), ssz=(kmm!=null)?Math.round(8*kmm*100)/100:defaultSizeM(40);
+      var sy={id:uid(),x:pxy[0],y:pxy[1],sym:'sd',size:ssz,layer:M.layer,label:String(Math.round(o.dip)),
+              rot:((dd-180)%360+360)%360,sd:{strike:o.strike,dip:o.dip,quad:o.quad,text:txt}};
+      S.symbols.push(sy); pushHist({op:'add',arr:'symbols',id:sy.id}); markDirty();
+      sdSetHint('走向傾斜マークを置きました: '+txt+note+'（続けて測ると同じ点に重なります。別の点は記入欄を閉じて次をタップ）');
+      render(); return; }
     var ta=el('txtInput'), cur=ta.value;
     var NL=String.fromCharCode(10);   // 追加行にバックスラッシュを書かない（§3.3）
     ta.value=cur?(trimEnd(cur)+NL+txt):txt;
@@ -7352,12 +7387,14 @@
     // v0.49: 形は SYMDEF から。円は CIRCLE、2 点の開いた折れ線は LINE、
     // それ以外は LWPOLYLINE。既存 6 個の出力エンティティは v0.48 と同じ種類になる。
     S.symbols.forEach(function(sy){ var L=LAYERS[sy.layer]||LAYERS[0], r=sy.size/2, x=sy.x, y=sy.y;
+      var geo=symGeo(sy);   // v1.16 走向傾斜マークは北基準の向きが情報。図郭正立の回転を掛けない
+      function RF(px,py){ return geo?[px,py]:rotF(px,py,x,y); }
       symPrims(sy).forEach(function(pr){
-        if(pr.k==='c'){ var cc=rotF(pr.x,pr.y,x,y); dxf+=wCircle(L.name,cc[0],cc[1],pr.r); }   // v0.75: 記号を図郭正立へ
-        else { var rp=pr.pts.map(function(q){return rotF(q[0],q[1],x,y);});
+        if(pr.k==='c'){ var cc=RF(pr.x,pr.y); dxf+=wCircle(L.name,cc[0],cc[1],pr.r); }   // v0.75: 記号を図郭正立へ
+        else { var rp=pr.pts.map(function(q){return RF(q[0],q[1]);});
           if(rp.length===2&&!pr.close) dxf+=wLine(L.name,rp[0][0],rp[0][1],rp[1][0],rp[1][1]);
           else dxf+=wPoly(L.name,rp,pr.close); } });
-      if(sy.label){ var lp=rotF(x+r*1.25,y-sy.size*0.2,x,y); dxf+=wText(L.name,lp[0],lp[1],sy.size*0.45,sy.label); } });
+      if(sy.label){ var lb=symLabelXY(sy), lp=RF(lb[0],lb[1]-sy.size*0.2); dxf+=wText(L.name,lp[0],lp[1],sy.size*0.45,sy.label); } });
     // 写真の属性（番号・方位・メモ）は XDATA として円に付ける（v0.35）。
     // 1001=APPID / 1000=文字列。図形とは別の属性情報なので CAD 側で
     // 図面の見た目を変えずに保持できる。
@@ -7740,13 +7777,15 @@
     // それ以外は PolyLine/Polygon 注釈。
     S.symbols.forEach(function(sy){ col=hexRgb01((LAYERS[sy.layer]||LAYERS[0]).color); var r=sy.size/2,x=sy.x,y=sy.y;
       // v0.70: 図郭向き書き出しでは点記号を図郭に正立させる（幾何なので Reader が忠実に読む）。
+      // v1.16: 走向傾斜マークは北基準の向きが情報なので正立させない
+      var geo=symGeo(sy); function RW(px,py){ return geo?[px,py]:rW(px,py,x,y); }
       symPrims(sy).forEach(function(pr){
-        if(pr.k==='c'){ var cc=rW(pr.x,pr.y,x,y); circ(cc[0],cc[1],pr.r,col); }
-        else { var rp=pr.pts.map(function(q){return rW(q[0],q[1],x,y);});
+        if(pr.k==='c'){ var cc=RW(pr.x,pr.y); circ(cc[0],cc[1],pr.r,col); }
+        else { var rp=pr.pts.map(function(q){return RW(q[0],q[1]);});
           if(rp.length===2&&!pr.close){ ink([rp],col); }
           else { pline(rp,col,pr.close); } } });
       // 記号ラベルは文字なので Reader が水平に置く（回転は Reader 対応待ち）。位置だけ図郭に合わせる。
-      if(sy.label){ var la=rW(x+r*1.25, y+sy.size*0.27, x, y); ftext(sy.label, la[0], la[1], sy.size*0.45, col); } });
+      if(sy.label){ var lb=symLabelXY(sy), la=RW(lb[0], lb[1]+sy.size*0.27); ftext(sy.label, la[0], la[1], sy.size*0.45, col); } });
     S.photos.forEach(function(ph){ col=hexRgb01(PHOTOL.color); var r=ph.size*0.22;
       circ(ph.x,ph.y,r,col);
       if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, dx=Math.sin(rad), dy=Math.cos(rad), al=ph.size*phArrow(), tip=[ph.x+dx*al,ph.y+dy*al];   // v1.13
@@ -8016,7 +8055,7 @@
       symPrims(sy).forEach(function(pr){
         if(pr.k==='c'){ circ(pr.x,pr.y,pr.r,L.color); }
         else { stroke(pr.pts,L.color,pr.close); } });
-      if(sy.label)label('T'+sy.id, x+r*1.25, y+sy.size*0.27); });
+      if(sy.label){ var lb2=symLabelXY(sy); label('T'+sy.id, lb2[0], lb2[1]+sy.size*0.27); } });   // v1.16 ラベルの基点
     S.photos.forEach(function(ph){ var r=ph.size*0.22;
       circ(ph.x,ph.y,r,PHOTOL.color);
       if(ph.dir!=null){ var rad=ph.dir*Math.PI/180, al2=ph.size*phArrow(), tip=[ph.x+Math.sin(rad)*al2,ph.y+Math.cos(rad)*al2];   // v1.13 矢印の長さ
