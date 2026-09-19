@@ -170,6 +170,12 @@
        v0.59: 利用者の指定で 30px -> 15px。内側は 15 - 1（上辺の罫線）= 14px なので、
        #hud に line-height:1 を入れて 12px の行box を確実に収める。 */
     --statusH:20px;
+    /* v1.20 分割ビュー（1:1 断面）の寸法。#sfView 自身と、浮きものの寄せ方の両方がここを見る
+       （2 か所に 46 を書くと片方だけ直したときに寄せ方がずれる）。 */
+    --sfW:46vw; --sfH:46vh;
+    /* v1.20 平面図が見えている領域（断面パネルに食われた辺の量）。既定は 0＝画面いっぱい。
+       body.sfside / body.sfbottom が付いている間だけ値が入る。 */
+    --planL:0px; --planR:0px; --planB:0px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--ink);
@@ -274,7 +280,9 @@
        「帯の高さ + 10px」だけでよくなった。v0.57 は 84px 空けていたから、
        道具の入る高さが 44px（ボタン 1 個ぶん）増える。
        入り切らないときは縦スクロールするので、道具は失わない。 */
-    max-height:calc(100% - 60px - 10px - var(--statusH) - var(--safe-t) - var(--safe-b));
+    /* v1.20 分割ビューのぶん（縦持ちは下 46vh）も引く。引かないとレールが断面の下に潜り、
+       下の方の道具に触れない。上限を縮めればレールが縦スクロールして全部の道具に届く。 */
+    max-height:calc(100% - 60px - 10px - var(--statusH) - var(--safe-t) - var(--safe-b) - var(--planB));
     overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
   .tbtn{width:44px;height:44px;min-height:44px;padding:0;justify-content:center;font-size:18px;border-radius:11px;}
   .tbtn b{font-size:18px;font-weight:800;}
@@ -316,7 +324,7 @@
      高さは --statusH（20px）。帯は最下部（bottom:0）に置き、align-items:center で
      文字を縦中央に揃える。セーフエリアは高さに含めず帯を薄く保つ。
      実機の指摘で 15px→20px・上揃え→中央寄せ（v0.67）。 */
-  #hud{position:fixed;left:0;right:0;bottom:0;z-index:20;
+  #hud{position:fixed;left:var(--planL);right:var(--planR);bottom:var(--planB);z-index:20;
     display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap;
     width:auto;max-width:none;overflow:hidden;
     height:var(--statusH);
@@ -341,14 +349,20 @@
   .gpsdot{width:9px;height:9px;border-radius:50%;background:#555;display:inline-block;margin-right:5px;vertical-align:-1px;}
   .gpsdot.fix{background:var(--ok);} .gpsdot.coarse{background:var(--warn);}
 
-  .fbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(56px + var(--safe-b));z-index:30;
+  /* v1.20 中央は「画面の中央」ではなく「平面図の中央」。分割ビューを開いていないときは
+     --planL/--planR が 0 なので left:50% と同じ式になる（従来と 1px も変わらない）。
+     幅の上限も平面図のぶんだけ詰める（はみ出して端が欠けるのを防ぐ。大きさは変えない）。 */
+  .fbar{position:fixed;left:calc(50% + (var(--planL) - var(--planR)) / 2);transform:translateX(-50%);
+    bottom:calc(56px + var(--safe-b) + var(--planB));z-index:30;
     display:none;align-items:center;gap:8px;padding:8px;background:rgba(23,28,34,.95);
-    border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(10px);max-width:94vw;overflow-x:auto;}
+    border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(10px);
+    max-width:calc(94vw - var(--planL) - var(--planR));overflow-x:auto;}
   .fbar.show{display:flex;}
   .fbar .fb{min-height:42px;padding:0 12px;justify-content:center;white-space:nowrap;}
   .fbar .symb{width:42px;font-size:19px;padding:0;}
   .fbar .lbl{font-size:12px;color:var(--muted);white-space:nowrap;padding:0 2px;}
-  #gpsPlace{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(116px + var(--safe-b));z-index:30;display:none;}
+  #gpsPlace{position:fixed;left:calc(50% + (var(--planL) - var(--planR)) / 2);transform:translateX(-50%);
+    bottom:calc(116px + var(--safe-b) + var(--planB));z-index:30;display:none;}
   #gpsPlace.show{display:inline-flex;}
 
   #edge{position:fixed;top:calc(60px + var(--safe-t));right:0;width:22px;bottom:calc(48px + var(--safe-b));z-index:25;}
@@ -358,6 +372,11 @@
      左手ではつまみをツールバーの下（z 19）に沈める。ツールバーの上下の外では従来どおり引ける。 */
   body.lefty #tools{left:auto;right:calc(10px + var(--safe-r));}
   body.lefty #edge{z-index:19;}
+  /* v1.20 分割ビューを開いている間だけ、平面図の領域を狭める。
+     横持ちは断面が右（左手モードは左）、縦持ちは下。閉じれば 0 に戻る。 */
+  body.sfside{--planR:var(--sfW);}
+  body.sfside.lefty{--planL:var(--sfW);--planR:0px;}
+  body.sfbottom{--planB:var(--sfH);}
   #drawer{position:fixed;top:0;right:0;height:100%;width:330px;max-width:88vw;z-index:60;
     transform:translateX(102%);transition:transform .22s ease;background:rgba(20,25,31,.98);
     border-left:1px solid var(--line);backdrop-filter:blur(14px);display:flex;flex-direction:column;
@@ -460,9 +479,9 @@
   #sfView{position:fixed;z-index:70;background:rgba(13,18,24,.97);display:none;flex-direction:column;
     border:0 solid var(--line,#2a3542);}
   #sfView.open{display:flex;}
-  #sfView.side{top:0;right:0;bottom:0;left:auto;width:46vw;border-left-width:1px;}
+  #sfView.side{top:0;right:0;bottom:0;left:auto;width:var(--sfW);border-left-width:1px;}
   body.lefty #sfView.side{right:auto;left:0;border-left-width:0;border-right-width:1px;}   /* v1.19 左手モードは左側に */
-  #sfView.bottom{left:0;right:0;bottom:0;top:auto;height:46vh;border-top-width:1px;}
+  #sfView.bottom{left:0;right:0;bottom:0;top:auto;height:var(--sfH);border-top-width:1px;}
   #sfView .sfBar{display:flex;gap:8px;align-items:center;padding:calc(8px + var(--safe-t)) 12px 8px;}
   #sfView .sfBar .lbl{flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   #sfView canvas{flex:1;min-height:0;touch-action:none;display:block;width:100%;}
@@ -483,9 +502,10 @@
   #load{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;background:rgba(14,18,22,.7);backdrop-filter:blur(4px);}
   #load .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 26px;font-size:14px;}
   /* v0.99: 下部メニューと重ならないよう画面中央へ。文字も大きく、最前面（z 95）に。 */
-  #toast{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);z-index:95;
+  #toast{position:fixed;left:calc(50% + (var(--planL) - var(--planR)) / 2);top:45%;transform:translate(-50%,-50%);z-index:95;
     background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 20px;
-    font-size:17px;line-height:1.55;font-weight:600;max-width:86vw;text-align:center;
+    font-size:17px;line-height:1.55;font-weight:600;
+    max-width:calc(86vw - var(--planL) - var(--planR));text-align:center;
     box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;transition:opacity .2s;pointer-events:none;}
   #toast.show{opacity:1;} #toast.err{border-color:var(--bad);}
   /* 3D地形ビュー */
@@ -540,7 +560,7 @@
     display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.35);}
   #btn3d.no-dem{opacity:.55;}
   /* 復元バナー */
-  #restoreCard{position:fixed;left:calc(12px + var(--safe-l));bottom:calc(74px + var(--safe-b));z-index:60;
+  #restoreCard{position:fixed;left:calc(12px + var(--safe-l) + var(--planL));bottom:calc(74px + var(--safe-b) + var(--planB));z-index:60;
     display:none;flex-direction:column;gap:8px;max-width:min(360px,92vw);
     background:rgba(23,28,34,.97);border:1px solid var(--line);border-radius:16px;padding:12px 14px;
     box-shadow:0 8px 28px rgba(0,0,0,.4);backdrop-filter:blur(12px);}
@@ -2526,7 +2546,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.19';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.20';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3932,7 +3952,12 @@
   function sfOrient(w,h){ return (w>h)?'side':'bottom'; }
   function sfApplyOrient(){ var v=document.getElementById('sfView'); if(!v) return;
     var o=sfOrient(window.innerWidth,window.innerHeight);
-    v.classList.toggle('side',o==='side'); v.classList.toggle('bottom',o==='bottom'); }
+    v.classList.toggle('side',o==='side'); v.classList.toggle('bottom',o==='bottom');
+    sfMarkBody(SFV.open?o:''); }
+  // v1.20 開いている向きを body に貼る。浮きバー・通知・状態帯・道具のレールは
+  // これを見て平面図の側へ寄る（どちらへ寄せるかの判断は CSS が持つ）。閉じたら必ず外す。
+  function sfMarkBody(o){ var b=document.body;
+    b.classList.toggle('sfside',o==='side'); b.classList.toggle('sfbottom',o==='bottom'); }
   function sfOpen(){
     if(measPts().length<PROF_MIN_PTS){ toast('先に主測線を引いてください（頂点 2 つ以上）',true); return; }
     if(!activeDem()){ toast('DEM がありません。地形断面が作れないのですべり面は描けません',true); return; }
@@ -3967,6 +3992,7 @@
             :'一筆書きで描いてください'); }
   function sfCloseView(){ SFV.open=false; SFV.drawing=false; SFV.pd={};
     var v=document.getElementById('sfView'); if(v) v.classList.remove('open');
+    sfMarkBody('');   // v1.20 閉じたら平面図は画面いっぱいに戻る
     CLIP.sig=''; render(); }   // v1.05 閉じたら重ね描き（E/F/D）を消して等高線を元の色に戻す
   // ---- v1.05 確定した断面を図面枠外に 1:1 の作図として残す ---------------------------
   // 図面枠（world）。図郭付きラスタの 4 隅から。無ければ描いた線と測線の外接矩形。
