@@ -176,6 +176,8 @@
     /* v1.20 平面図が見えている領域（断面パネルに食われた辺の量）。既定は 0＝画面いっぱい。
        body.sfside / body.sfbottom が付いている間だけ値が入る。 */
     --planL:0px; --planR:0px; --planB:0px;
+    /* v1.21 道具のレールの幅（ボタン 44 + 余白 7×2 + 枠 2）。浮きものはこの帯に潜らない。 */
+    --railW:60px; --railIn:calc(10px + var(--railW) + 8px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;height:100%;width:100%;overflow:hidden;background:var(--ink);
@@ -333,6 +335,18 @@
     background:rgba(14,18,22,var(--hudA));
     backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);
     font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;line-height:1;color:var(--muted);}
+  /* v1.21 浮きもの（浮きバー・通知）の置き場を決める値。**body に置くこと**。
+     :root に置くと body.sfside が入れた --planR ではなく html 側の 0px で解決されてしまう
+     （カスタムプロパティは宣言した要素の値で var() が解ける）。
+       --planCX  平面図の中心（v1.20 と同じ。ここは動かさない）
+       --freeL/R レールと断面パネルに食われていない帯の左右の食われ量
+       --fbarMax 中心を保ったまま、その帯に収まる幅の上限（中心から近い方の縁まで × 2）
+     max(180px,…) は画面が極端に狭いときに負の値になって指定ごと無効になるのを防ぐ保険。 */
+  body{--planCX:calc(50vw + (var(--planL) - var(--planR)) / 2);
+    --freeL:calc(var(--safe-l) + var(--railIn));
+    --freeR:var(--planR);
+    --fbarMax:max(180px, calc(2 * min(var(--planCX) - var(--freeL), 100vw - var(--freeR) - var(--planCX))));}
+  body.lefty{--freeL:var(--planL);--freeR:calc(var(--safe-r) + var(--railIn));}   /* 左手はレールが右 */
   #hud .spacer{display:none;}   /* 左右の組で寄せるので、幅を伸ばす余白は要らない */
   #hud .v{color:var(--txt);} #hud .k{color:var(--muted);}
   /* 左の組（スケール）は縮めない。右の組（座標ほか）は狭いときだけ詰まる。 */
@@ -352,16 +366,20 @@
   /* v1.20 中央は「画面の中央」ではなく「平面図の中央」。分割ビューを開いていないときは
      --planL/--planR が 0 なので left:50% と同じ式になる（従来と 1px も変わらない）。
      幅の上限も平面図のぶんだけ詰める（はみ出して端が欠けるのを防ぐ。大きさは変えない）。 */
-  .fbar{position:fixed;left:calc(50% + (var(--planL) - var(--planR)) / 2);transform:translateX(-50%);
+  .fbar{position:fixed;left:var(--planCX);transform:translateX(-50%);
     bottom:calc(56px + var(--safe-b) + var(--planB));z-index:30;
-    display:none;align-items:center;gap:8px;padding:8px;background:rgba(23,28,34,.95);
+    display:none;align-items:center;justify-content:center;gap:8px;padding:8px;background:rgba(23,28,34,.95);
     border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(10px);
-    max-width:calc(94vw - var(--planL) - var(--planR));overflow-x:auto;}
+    /* v1.21 上限は「平面図に収まる幅」と「レールに潜らない幅」の小さい方。 */
+    max-width:min(calc(94vw - var(--planL) - var(--planR)), var(--fbarMax));
+    /* v1.21 入り切らないときは横スクロールで隠さず**折り返す**。2 段になっても
+       全部のボタンが見えて押せる方が現場で速い。広いときは 1 段のままで従来と同じ。 */
+    flex-wrap:wrap;overflow-x:auto;}
   .fbar.show{display:flex;}
   .fbar .fb{min-height:42px;padding:0 12px;justify-content:center;white-space:nowrap;}
   .fbar .symb{width:42px;font-size:19px;padding:0;}
   .fbar .lbl{font-size:12px;color:var(--muted);white-space:nowrap;padding:0 2px;}
-  #gpsPlace{position:fixed;left:calc(50% + (var(--planL) - var(--planR)) / 2);transform:translateX(-50%);
+  #gpsPlace{position:fixed;left:var(--planCX);transform:translateX(-50%);
     bottom:calc(116px + var(--safe-b) + var(--planB));z-index:30;display:none;}
   #gpsPlace.show{display:inline-flex;}
 
@@ -479,7 +497,11 @@
   #sfView{position:fixed;z-index:70;background:rgba(13,18,24,.97);display:none;flex-direction:column;
     border:0 solid var(--line,#2a3542);}
   #sfView.open{display:flex;}
-  #sfView.side{top:0;right:0;bottom:0;left:auto;width:var(--sfW);border-left-width:1px;}
+  /* v1.21 上のバーの下（道具のレールと同じ高さ）から始める。top:0 だと上のバーの半分が
+     隠れ、左手では「開く・保存・元に戻す」が、右手では「方位・スナップ・☰」が押せなくなる
+     （断面を開いたまま平面図に書けるので、閉じるまで待てない）。パネルは 60px 低くなる。 */
+  #sfView.side{top:calc(60px + var(--safe-t));right:0;bottom:0;left:auto;width:var(--sfW);border-left-width:1px;}
+  #sfView.side .sfBar{padding-top:8px;}   /* 上端に接しなくなったので safe-t の重ね掛けをやめる */
   body.lefty #sfView.side{right:auto;left:0;border-left-width:0;border-right-width:1px;}   /* v1.19 左手モードは左側に */
   #sfView.bottom{left:0;right:0;bottom:0;top:auto;height:var(--sfH);border-top-width:1px;}
   #sfView .sfBar{display:flex;gap:8px;align-items:center;padding:calc(8px + var(--safe-t)) 12px 8px;}
@@ -502,10 +524,10 @@
   #load{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;background:rgba(14,18,22,.7);backdrop-filter:blur(4px);}
   #load .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 26px;font-size:14px;}
   /* v0.99: 下部メニューと重ならないよう画面中央へ。文字も大きく、最前面（z 95）に。 */
-  #toast{position:fixed;left:calc(50% + (var(--planL) - var(--planR)) / 2);top:45%;transform:translate(-50%,-50%);z-index:95;
+  #toast{position:fixed;left:var(--planCX);top:45%;transform:translate(-50%,-50%);z-index:95;
     background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 20px;
     font-size:17px;line-height:1.55;font-weight:600;
-    max-width:calc(86vw - var(--planL) - var(--planR));text-align:center;
+    max-width:min(calc(86vw - var(--planL) - var(--planR)), var(--fbarMax));text-align:center;
     box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;transition:opacity .2s;pointer-events:none;}
   #toast.show{opacity:1;} #toast.err{border-color:var(--bad);}
   /* 3D地形ビュー */
@@ -2546,7 +2568,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.20';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.21';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
