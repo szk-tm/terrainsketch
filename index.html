@@ -352,6 +352,12 @@
   #gpsPlace.show{display:inline-flex;}
 
   #edge{position:fixed;top:calc(60px + var(--safe-t));right:0;width:22px;bottom:calc(48px + var(--safe-b));z-index:25;}
+  /* v1.19 左手モード（body.lefty）: ツールバーを右へ（左手が当たらない）。
+     1:1 断面（横持ち）は左へ（下の #sfView.side）。☰ メニュー・つまみ・記入欄は右手と同じ（利用者指定）。
+     つまみ #edge（z 25・右端 22px）は右へ移ったツールバー（右 10px から）と 12px 重なるので、
+     左手ではつまみをツールバーの下（z 19）に沈める。ツールバーの上下の外では従来どおり引ける。 */
+  body.lefty #tools{left:auto;right:calc(10px + var(--safe-r));}
+  body.lefty #edge{z-index:19;}
   #drawer{position:fixed;top:0;right:0;height:100%;width:330px;max-width:88vw;z-index:60;
     transform:translateX(102%);transition:transform .22s ease;background:rgba(20,25,31,.98);
     border-left:1px solid var(--line);backdrop-filter:blur(14px);display:flex;flex-direction:column;
@@ -455,6 +461,7 @@
     border:0 solid var(--line,#2a3542);}
   #sfView.open{display:flex;}
   #sfView.side{top:0;right:0;bottom:0;left:auto;width:46vw;border-left-width:1px;}
+  body.lefty #sfView.side{right:auto;left:0;border-left-width:0;border-right-width:1px;}   /* v1.19 左手モードは左側に */
   #sfView.bottom{left:0;right:0;bottom:0;top:auto;height:46vh;border-top-width:1px;}
   #sfView .sfBar{display:flex;gap:8px;align-items:center;padding:calc(8px + var(--safe-t)) 12px 8px;}
   #sfView .sfBar .lbl{flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -664,6 +671,9 @@
 </style>
 </head>
 <body>
+<!-- v1.19 左手モード: 本体スクリプトは 3MB 先で走るので、ここで先に body.lefty を付けて
+     「起動直後だけ左にツールバーが出て右へ跳ぶ」のを防ぐ。正本は本体の leftyApply。 -->
+<script id="leftyboot">try{ if(localStorage.getItem('ts.lefty')==='1') document.body.className+=' lefty'; }catch(e){}</script>
 <canvas id="map"></canvas>
 
 <div id="top">
@@ -675,8 +685,10 @@
   <!-- v0.88: 💾（絵文字）は色を指定できないため単色 SVG に替えた。
        色は CSS の --saveOn / --saveOff（押せる=青 / 押せない=灰）。 -->
   <button class="ghost ico" id="btnSaveTop" title="保存 — この端末のプロジェクトに上書き保存します（ファイルへの書き出しは ☰ メニュー）" aria-label="保存"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.8 3h10.7L21 9.5v10.7a.8.8 0 0 1-.8.8H3.8a.8.8 0 0 1-.8-.8V3.8a.8.8 0 0 1 .8-.8z"/><rect x="8.7" y="3" width="6.6" height="5.6" rx=".5" fill="#fff"/><rect x="12.4" y="3.8" width="1.9" height="4.1" rx=".3" fill="currentColor"/><rect x="6.8" y="12.5" width="10.4" height="8.5" rx=".7" fill="#fff"/><path d="M8.8 14.9h6.4M8.8 17.1h6.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/></svg></button>
-  <button class="ghost ico" id="btnUndo" title="元に戻す">↩︎</button>
-  <button class="ghost ico" id="btnRedo" title="やり直す">↪︎</button>
+  <!-- v1.19: ↩︎↪︎ の文字は細く薄くて読みにくい（利用者指摘）ので、保存（v0.88）と同じ単色 SVG に。
+       線幅 2.7 の太い矢印。色は currentColor（上のバーの文字色）、押せないときは従来の .dim（opacity .4）。 -->
+  <button class="ghost ico" id="btnUndo" title="元に戻す" aria-label="元に戻す"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.6 5.2L3.8 10l4.8 4.8"/><path d="M3.8 10h10.4a5.4 5.4 0 0 1 0 10.8H9.6"/></svg></button>
+  <button class="ghost ico" id="btnRedo" title="やり直す" aria-label="やり直す"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="matrix(-1 0 0 1 24 0)"><path d="M8.6 5.2L3.8 10l4.8 4.8"/><path d="M3.8 10h10.4a5.4 5.4 0 0 1 0 10.8H9.6"/></g></svg></button>
   <div class="spacer"></div>
   <!-- v0.90: プロジェクト名。タップで変更。書き出しファイル名（fname）にも使われる。
        spacer 2 枚に挟んで中央に置く（11 インチ横持ちの余白をここが吸収する）。 -->
@@ -812,6 +824,10 @@
     <div class="frowD"><label>記入欄の位置</label>
       <button id="btnAnchorIn" class="ghost" style="flex:0 0 auto;">タップ位置に出す</button></div>
     <div class="muted2">テキスト・旗揚げの記入欄をタップした位置のすぐ横に出します（手を置いたままペンで書き始められます）。設定項目は手で隠れないよう記入欄の上に並びます。オフにすると従来どおり画面中央のダイアログになります。</div>
+    <div class="dSec">利き手</div>
+    <div class="frowD"><label>ペンを持つ手</label>
+      <button id="btnLefty" class="ghost" style="flex:0 0 auto;">右手</button></div>
+    <div class="muted2">左手にすると、ツールバーを右側に置き（左手が当たって押してしまうのを防ぐ）、横持ちのすべり面断面を左側に出します。記入欄・メニューは右手と同じです。この設定はこの端末に覚え、プロジェクト（.json）には入れません。</div>
     <div class="dSec">このアプリについて</div>
     <div class="muted2" id="verNote">TerrainSketch</div>
     </div>
@@ -2510,7 +2526,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.18';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.19';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -6883,6 +6899,23 @@
     S.anchorIn=(S.anchorIn===false); syncAnchorIn();
     toast(S.anchorIn?'記入欄をタップ位置に出します':'記入欄を画面中央に出します'); };
   syncAnchorIn();
+  // ---- v1.19 左手モード ------------------------------------------------------------
+  // 利き手は人（端末）の属性であってプロジェクトの属性ではない。.json には入れず端末に覚える
+  // （localStorage 'ts.lefty'）。見た目は body.lefty（CSS）だけで左右を入れ替える。
+  // 記入欄・☰ メニュー・つまみは右手と同じ（利用者指定 2026-09-19: 横書きは左から右なので記入欄は右で問題ない）。
+  var LEFTY=false, LEFTY_KEY='ts.lefty';
+  function leftyOn(){ return LEFTY; }
+  function leftyLoad(){ try{ return localStorage.getItem(LEFTY_KEY)==='1'; }catch(e){ return false; } }
+  function leftyApply(on){ LEFTY=!!on;
+    document.body.classList.toggle('lefty',LEFTY);
+    try{ if(LEFTY) localStorage.setItem(LEFTY_KEY,'1'); else localStorage.removeItem(LEFTY_KEY); }catch(e){}
+    syncLefty(); }
+  function syncLefty(){ var b=document.getElementById('btnLefty'); if(!b) return;
+    b.textContent=LEFTY?'左手':'右手'; b.className=LEFTY?'primary':'ghost'; b.style.flex='0 0 auto'; }
+  document.getElementById('btnLefty').onclick=function(){ leftyApply(!LEFTY);
+    toast(LEFTY?'左手モード: ツールバーを右に、横持ちのすべり面断面を左に出します'
+               :'右手モード: ツールバーを左に戻します'); };
+  leftyApply(leftyLoad());
   // 再描画の実測（v0.39.4）。作図が重いときの切り分けに使う。
   // 線のなめらかさ 切→弱→強（v0.39.7）
   function syncSmooth(){ var b=document.getElementById('btnSmooth'), v=SMOOTH_PASSES();
