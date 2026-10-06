@@ -848,6 +848,9 @@
     <div class="frowD"><label>ペンを持つ手</label>
       <button id="btnLefty" class="ghost" style="flex:0 0 auto;">右手</button></div>
     <div class="muted2">左手にすると、ツールバーを右側に置き（左手が当たって押してしまうのを防ぐ）、横持ちのすべり面断面を左側に出します。記入欄・メニューは右手と同じです。この設定はこの端末に覚え、プロジェクト（.json）には入れません。</div>
+    <div class="dSec">外部 GPS</div>
+    <div class="muted2" id="xgpsStat">まだ受信していません</div>
+    <div class="muted2">AtomS3R に ATOMIC GPS ベースを付け、同梱のファーム（AtomS3R_ClinoGPS）を書き込むと、📍 の現在地に外部 GPS を使います。10 秒途絶えると内蔵の GPS に戻ります。「破棄」が増えるときは、ファームの KEY_GAP_MS を大きくしてください。位置はこの場の表示だけで、プロジェクトには保存しません。</div>
     <div class="dSec">このアプリについて</div>
     <div class="muted2" id="verNote">TerrainSketch</div>
     </div>
@@ -2546,7 +2549,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.20';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.21';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5605,6 +5608,11 @@
     if(SD.timer){ clearTimeout(SD.timer); SD.timer=0; }
     var raw=SD.buf; SD.buf='';
     if(!raw) return;
+    // v1.21 外部 GPS の文（1,緯度,…）が混ざったときは走向傾斜として入れない。
+    //   ふつうは Ctrl+G の合図で xgpsKey が先に受け取るので、ここに来るのは合図が届かない端末だけ。
+    if(/^1,-?[0-9]/.test(raw)){
+      sdSetHint('外部 GPS の信号が混ざりました（Ctrl+G の合図が届いていないようです）。走向傾斜は受け取っていません。もう一度はかってください');
+      return; }
     // v1.11 末尾の印で「磁北のまま(M)」「機器が補正済み(T)」「無印(従来)」を見分ける
     var mark='', body=raw, tail=raw.charAt(raw.length-1).toUpperCase();
     if(tail==='M'||tail==='T'){ mark=tail; body=raw.slice(0,raw.length-1); }
@@ -7034,12 +7042,98 @@
   })();
 
   // ---- GPS ----
-  document.getElementById('btnGps').onclick=function(){ var btn=this;
-    if(S.gps.on){ if(S.gps.watch!=null)navigator.geolocation.clearWatch(S.gps.watch); S.gps.on=false; S.gps.watch=null; S.gps.world=null; btn.classList.remove('on'); setGpsHud('GPS停止',''); updateGpsPlace(); render(); return; }
-    if(!navigator.geolocation){ toast('この端末はGPSに非対応です',true); return; }
-    S.gps.on=true; btn.classList.add('on'); setGpsHud('取得中…','coarse');
-    S.gps.watch=navigator.geolocation.watchPosition(function(p){ var r=proj4('EPSG:4326','JPC:'+S.Z,[p.coords.longitude,p.coords.latitude]); S.gps.world={x:r[0],y:r[1]}; S.gps.acc=p.coords.accuracy; setGpsHud('±'+(p.coords.accuracy?p.coords.accuracy.toFixed(0):'?')+'m', p.coords.accuracy<=10?'fix':'coarse'); updateGpsPlace(); render(); },
-      function(err){ setGpsHud('GPSエラー','coarse'); toast('GPS: '+err.message,true); }, {enableHighAccuracy:true,maximumAge:1000,timeout:20000}); };
+  // v1.21 位置の元は 2 つ。内蔵（navigator.geolocation）と外部（AtomS3R ＋ ATOMIC GPS ベースが
+  // Bluetooth キーボードとして打ち込む短い文）。📍 を入れているあいだ、外部が新しければ外部、
+  // そうでなければ内蔵を使う。どちらも「その場の表示」だけで、プロジェクトには保存しない。
+  var XGPS_FRESH_MS=10000;   // これより古い外部の位置は使わない（内蔵に戻る）
+  var XGPS_GAP_MS=400;       // 文字の間がこれだけ空いたら、途中で切れた文として捨てる
+  var XGPS_MAX_MS=3000;      // 1 本の文がこれより長くかかったら捨てる
+  var XGPS_MAXLEN=96;
+  var XG={cap:false,buf:'',bad:false,t0:0,timer:0,ok:0,ng:0,told:false,lost:false};
+  function gpsStart(){ var btn=document.getElementById('btnGps');
+    S.gps.on=true; btn.classList.add('on'); S.gps.int=null;
+    if(navigator.geolocation){
+      S.gps.watch=navigator.geolocation.watchPosition(function(p){ gpsFromInternal(p); },
+        function(err){ if(!xgpsFresh()){ setGpsHud('GPSエラー','coarse'); toast('GPS: '+err.message,true); } },
+        {enableHighAccuracy:true,maximumAge:1000,timeout:20000}); }
+    else if(!xgpsFresh()){ toast('この端末には内蔵の GPS がありません。外部 GPS の信号を待ちます'); }
+    gpsApply(); }
+  function gpsStop(){ var btn=document.getElementById('btnGps');
+    if(S.gps.watch!=null&&navigator.geolocation) navigator.geolocation.clearWatch(S.gps.watch);
+    S.gps.on=false; S.gps.watch=null; S.gps.world=null; S.gps.acc=null; S.gps.src=''; S.gps.int=null;
+    btn.classList.remove('on'); setGpsHud('GPS停止',''); updateGpsPlace(); render(); }
+  document.getElementById('btnGps').onclick=function(){ if(S.gps.on) gpsStop(); else gpsStart(); };
+  function gpsFromInternal(p){
+    S.gps.int={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy,t:Date.now()}; gpsApply(); }
+  function xgpsFresh(){ var e=S.gps.ext; return !!(e&&(Date.now()-e.t)<=XGPS_FRESH_MS); }
+  // 受信機は精度の推定値を出さないので、HDOP から目安を出す（単独測位の UERE をおよそ 2.5 m とみる）
+  function xgpsAcc(hdop){ return Math.max(1.5,2.5*hdop); }
+  // どちらの位置を使うかを決めて、画面を更新する
+  function gpsApply(){ if(!S.gps.on) return;
+    var e=S.gps.ext, i=S.gps.int, r;
+    if(xgpsFresh()){ r=proj4('EPSG:4326','JPC:'+S.Z,[e.lon,e.lat]);
+      S.gps.world={x:r[0],y:r[1]}; S.gps.acc=xgpsAcc(e.hdop); S.gps.src='ext';
+      setGpsHud('外部 ±'+S.gps.acc.toFixed(0)+'m・'+e.sats+'衛星', S.gps.acc<=10?'fix':'coarse'); }
+    else if(i){ r=proj4('EPSG:4326','JPC:'+S.Z,[i.lon,i.lat]);
+      S.gps.world={x:r[0],y:r[1]}; S.gps.acc=i.acc; S.gps.src='int';
+      setGpsHud('±'+(i.acc?i.acc.toFixed(0):'?')+'m', i.acc<=10?'fix':'coarse'); }
+    else { S.gps.world=null; S.gps.acc=null; S.gps.src=''; setGpsHud('取得中…','coarse'); }
+    updateGpsPlace(); render(); }
+  // ---- 外部 GPS の文を受け取る（Ctrl+G → 本文 → Enter） ----
+  // 文の形はファーム（clino/AtomS3R_ClinoGPS.ino）の buildGpsFrame と同じ:
+  //   1,緯度,経度,標高,種類,HDOP,衛星数,hhmmss,cs   cs は「1,…hhmmss」の XOR（16 進小文字 2 桁）
+  function xgpsParse(s){
+    var f=String(s).split(',');
+    if(f.length!==9||f[0]!=='1'||f[1]===''||f[2]==='') return null;
+    var body=s.slice(0,s.lastIndexOf(',')), x=0, k;
+    for(k=0;k<body.length;k++) x=x^body.charCodeAt(k);
+    var h=(x<16?'0':'')+x.toString(16);
+    if(h!==f[8]) return null;
+    var lat=+f[1], lon=+f[2], alt=+f[3], q=+f[4], hd=+f[5], sv=+f[6];
+    if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180) return null;
+    if(!(q>=1)||!(hd>0)||!(sv>=0)) return null;
+    return {lat:lat,lon:lon,alt:isFinite(alt)?alt:null,q:q,hdop:hd,sats:sv,utc:f[7]}; }
+  function xgpsReset(){ if(XG.timer){ clearTimeout(XG.timer); XG.timer=0; } XG.cap=false; XG.buf=''; XG.bad=false; }
+  function xgpsAbort(){ if(XG.cap){ XG.ng++; } xgpsReset(); xgpsStat(); }
+  function xgpsKey(e){
+    var k=e.key||'';
+    if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(k==='g'||k==='G')){   // 始まりの合図
+      e.preventDefault(); e.stopImmediatePropagation();
+      if(XG.cap) XG.ng++;                                        // 前の文が終わらないうちに次が来た
+      xgpsReset(); XG.cap=true; XG.t0=Date.now();
+      XG.timer=setTimeout(xgpsAbort,XGPS_GAP_MS); return; }
+    if(!XG.cap) return;                                          // 文の外では何もしない
+    e.preventDefault(); e.stopImmediatePropagation();            // 文の中は 1 文字も他へ渡さない
+    if(XG.timer) clearTimeout(XG.timer);
+    if(k==='Enter'){ XG.timer=0; xgpsEnd(); return; }
+    if(k==='Control'||k==='Shift'||k==='Alt'||k==='Meta'){ XG.timer=setTimeout(xgpsAbort,XGPS_GAP_MS); return; }
+    if(k.length===1&&/^[0-9a-f.,-]$/.test(k)) XG.buf+=k; else XG.bad=true;
+    if(XG.buf.length>XGPS_MAXLEN||Date.now()-XG.t0>XGPS_MAX_MS) XG.bad=true;
+    XG.timer=setTimeout(xgpsAbort,XGPS_GAP_MS); }
+  document.addEventListener('keydown',xgpsKey,true);
+  function xgpsEnd(){ var s=XG.buf, bad=XG.bad; xgpsReset();
+    var o=bad?null:xgpsParse(s);
+    if(!o){ XG.ng++; xgpsStat(); return; }
+    XG.ok++; o.t=Date.now(); S.gps.ext=o;
+    if(!S.gps.on){ if(!XG.told){ XG.told=true;
+        toast('外部 GPS の信号を受け取りました。📍 を押すと現在地に使います'); } }
+    else { if(XG.lost){ XG.lost=false; toast('外部 GPS に戻しました'); } gpsApply(); }
+    xgpsStat(); }
+  // 外部が途絶えたら内蔵に戻す（2 秒ごとに見る）
+  function xgpsTick(){
+    if(S.gps.on&&S.gps.src==='ext'&&!xgpsFresh()){
+      if(!XG.lost){ XG.lost=true; toast('外部 GPS の信号が途絶えました。内蔵の GPS に切り替えます'); }
+      gpsApply(); }
+    xgpsStat(); }
+  setInterval(xgpsTick,2000);
+  // 設定タブの受信状況（取りこぼしを現場で確かめるため）
+  function xgpsStat(){ var d=document.getElementById('xgpsStat'); if(!d) return;
+    var e=S.gps.ext;
+    if(!XG.ok&&!XG.ng){ d.textContent='まだ受信していません'; return; }
+    var t='受信 '+XG.ok+'・破棄 '+XG.ng;
+    if(e){ var age=Math.floor((Date.now()-e.t)/1000);   // 時計と同じく切り捨て（0.7 秒前は「0 秒前」）
+      t+='・最後 '+age+' 秒前（衛星 '+e.sats+'・HDOP '+e.hdop.toFixed(1)+(e.alt!=null?'・標高 '+e.alt.toFixed(0)+' m':'')+'）'; }
+    d.textContent=t; }
   function setGpsHud(t,c){ document.getElementById('hGps').textContent=t; document.getElementById('gDot').className='gpsdot '+(c||''); }
 
   function fileToDataURL(file,maxDim,q){ return new Promise(function(res){
