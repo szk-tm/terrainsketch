@@ -360,7 +360,8 @@
   .fbar.show{display:flex;}
   /* v1.23 メモモード */
   /* v1.24 用紙のタブは左下に Excel のように（道具のレールの右から・状態帯のすぐ上） */
-  #memoBar{position:fixed;left:calc(78px + var(--safe-l));bottom:calc(var(--statusH) + var(--safe-b));z-index:30;
+  /* v1.26 状態帯は bottom:0・高さ statusH（safe-b を含まない）なので、safe-b を足すと隙間ができていた */
+  #memoBar{position:fixed;left:calc(78px + var(--safe-l));bottom:calc(var(--statusH) + var(--planB));z-index:30;
     display:none;align-items:stretch;background:#f1efeb;border:1px solid #d4d0c8;border-bottom:0;border-radius:8px 8px 0 0;
     max-width:calc(100vw - 170px - var(--safe-l) - var(--safe-r));box-shadow:0 -1px 4px rgba(0,0,0,.08);}
   body.lefty #memoBar{left:calc(10px + var(--safe-l));}
@@ -642,6 +643,10 @@
   /* .szBtn は白背景モーダル用に color:var(--ink)（ほぼ黒）を継承しており、
      暗いシート上では文字が沈む。シート内だけ明色に上書きする。 */
   #lineSheet .szBtn{color:var(--txt);background:var(--panel);border:1px solid #46505c;}
+  /* v1.26 線の色 */
+  .lcBox{display:flex;gap:8px;flex-wrap:wrap;flex:1;justify-content:flex-end;}
+  .lcSw{width:42px;height:42px;min-width:42px;border-radius:10px;border:2px solid rgba(255,255,255,.18);padding:0;}
+  .lcSw.on{border:3px solid #fff;box-shadow:0 0 0 2px var(--accent,#f5a524);}
   #lineSheet .szBtn.on{background:var(--accent,#f5a524);color:#1a1206;border-color:transparent;}
   #lineSheet .muted2{padding:0 2px;}
   /* スナップ設定シート（v0.41）。線のスタイルシートと同じ作り。 */
@@ -1154,6 +1159,7 @@
       <span class="lbl" id="tickLLbl" style="min-width:56px;text-align:center;color:var(--txt);">5 m</span>
       <button class="fb" id="tickLPlus" type="button">＋</button>
     </div></div>
+  <div class="shRow" id="lcRow"><span class="shLab">線の色</span><div class="lcBox" id="lcBox"></div></div>
   <div class="shRow" id="lwRow"><span class="shLab">線の太さ</span>
     <div class="szBox">
       <button class="szBtn lwBtn" data-lw="0.6" type="button" style="min-width:48px;">細</button>
@@ -2655,7 +2661,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.25';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.26';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3078,6 +3084,11 @@
         polyline(g,L0.color,lw(2.5)*(S.poly.lwm||1),false,false,0); });
       S.poly.pts.forEach(function(pt){ var p=w2s(pt[0],pt[1]); ctx.fillStyle=L0.color; ctx.beginPath(); ctx.arc(p[0],p[1],4,0,7); ctx.fill(); }); }
     S.leaders.forEach(function(ld){ var L=LAYERS[ld.layer]||LAYERS[0]; if(SK&&L.vis) drawLeader(ld,L.color); });
+    if(!EXPORTING&&S.leaderPrev){ var lp0=w2s(S.leaderPrev[0][0],S.leaderPrev[0][1]), lp1=w2s(S.leaderPrev[1][0],S.leaderPrev[1][1]);   // v1.26
+      ctx.save(); ctx.strokeStyle=accent(); ctx.lineWidth=2.5; ctx.setLineDash([8,5]);
+      ctx.beginPath(); ctx.moveTo(lp0[0],lp0[1]); ctx.lineTo(lp1[0],lp1[1]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle=accent(); ctx.beginPath(); ctx.arc(lp0[0],lp0[1],5,0,7); ctx.fill();
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(lp1[0],lp1[1],6,0,7); ctx.stroke(); ctx.restore(); }
     if(!EXPORTING&&S.leaderTip){ var p=w2s(S.leaderTip[0],S.leaderTip[1]); ctx.strokeStyle=accent(); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p[0],p[1],7,0,7); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(p[0]-11,p[1]); ctx.lineTo(p[0]+11,p[1]); ctx.moveTo(p[0],p[1]-11); ctx.lineTo(p[0],p[1]+11); ctx.stroke(); }
     if(!EXPORTING&&S.markTip){ var mkp=w2s(S.markTip[0],S.markTip[1]);
@@ -5114,12 +5125,21 @@
       if(e.pointerType==='pen') return (S.tool==='pan')?'pan':S.tool;
       if(e.pointerType==='touch') return (S.tool==='pen'||S.tool==='erase')?'pan':S.tool; } // 指はドラッグ=移動
     return S.tool; }
-  function onPenDetected(){ var b=document.getElementById('btnPen');
-    b.classList.remove('hidden'); b.classList.add('on');
+  // v1.26 ボタンの見た目は必ず実際の状態（PEN_SEEN と PEN_MODE）から作る。
+  //   v1.25 までは見た目を PEN_MODE だけで決め、PEN_SEEN はキャンバスにペンが触れたときだけ立てていたので、
+  //   「ON に見えるのに効かない」ことがあった（✍️ を OFF→ON するとペンがボタンに触れたあとなので効いた）。
+  function syncPenBtn(){ var b=document.getElementById('btnPen'); if(!b) return;
+    b.classList.toggle('hidden',!PEN_SEEN); b.classList.toggle('on',penActive()); }
+  function penStore(){ try{ localStorage.setItem('ts.penSeen',PEN_SEEN?'1':'0'); localStorage.setItem('ts.penMode',PEN_MODE?'1':'0'); }catch(e){} }
+  function onPenDetected(){ PEN_SEEN=true; penStore(); syncPenBtn();
     toast('ペンを検出: ペン=作図／指=移動・ズーム（上部の ✍️ で切替）'); }
-  document.getElementById('btnPen').onclick=function(){ PEN_MODE=!PEN_MODE;
-    this.classList.toggle('on',PEN_MODE);
+  document.getElementById('btnPen').onclick=function(){ PEN_MODE=!PEN_MODE; penStore(); syncPenBtn();
     toast(PEN_MODE?'ペン優先: ペン=作図／指=移動':'通常: 指でも作図します'); };
+  // ペンが画面のどこに触れても「ペンがある」とみなす（捕獲段階）。端末に覚えて、起動直後から効かせる。
+  window.addEventListener('pointerdown',function(e){ if(e.pointerType==='pen'&&!PEN_SEEN) onPenDetected(); },true);
+  (function(){ try{ if(localStorage.getItem('ts.penSeen')==='1') PEN_SEEN=true;
+      var m=localStorage.getItem('ts.penMode'); if(m==='0') PEN_MODE=false; else if(m==='1') PEN_MODE=true; }catch(e){}
+    syncPenBtn(); })();
   // モーダル/シートが開いている間はキャンバス操作を受け付けない。
   // v0.39.4: getComputedStyle は同期スタイル計算を強制するので、ポインタ 1 イベントごとに
   // 5 要素分呼ぶのをやめ、16ms（約 1 フレーム）だけ結果を使い回す。
@@ -5434,6 +5454,13 @@
   // ===== v1.25 分割表示 ===================================================================
   // 配置は固定（横持ち: スケッチが左・メモが右 ／ 縦持ち: スケッチが上・メモが下）。操作していない側に絵を出す。
   var MEMO_SPLIT_KEY='ts.memoSplit', MSES=false;   // MSES = 分割表示の最中
+  // v1.26 側ごとの画角: その枠の中心に映っていた地点（world）・縮尺・回転
+  var MSV={};
+  function memoPaneCenter(){ var v=memoVisRect(); return v?[(v.x0+v.x1)/2,(v.y0+v.y1)/2]:[cssW/2,cssH/2]; }
+  function memoPaneSave(){ var c=memoPaneCenter(); MSV[MEMO.on?'memo':'map']={c:s2w(c[0],c[1]),sc:S.V.scale,rot:S.V.rot||0}; }
+  function memoPaneApply(){ var v=MSV[MEMO.on?'memo':'map']; if(!v) return false;
+    S.V.scale=v.sc; S.V.rot=MEMO.on?0:v.rot; S.V.cx=v.c[0]; S.V.cy=v.c[1];
+    var c=memoPaneCenter(), q=s2w(c[0],c[1]); S.V.cx+=v.c[0]-q[0]; S.V.cy+=v.c[1]-q[1]; return true; }
   function memoSplitPref(){ try{ return localStorage.getItem(MEMO_SPLIT_KEY)==='1'; }catch(e){ return false; } }
   function memoSplitSetPref(on){ try{ if(on) localStorage.setItem(MEMO_SPLIT_KEY,'1'); else localStorage.removeItem(MEMO_SPLIT_KEY); }catch(e){} }
   function memoSide(){ return window.innerWidth>window.innerHeight; }   // 横持ちなら左右
@@ -5455,27 +5482,34 @@
     var dpr=Math.min(2,window.devicePixelRatio||1), pw=Math.round(r.width*dpr), ph=Math.round(r.height*dpr), oc;
     c.width=pw; c.height=ph; var g=c.getContext('2d');
     try{
-      if(MEMO.on){ oc=memoAsMap(function(){ return exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,1,S.V.rot||0,
-          {cx:S.V.cx,cy:S.V.cy,scale:S.V.scale*dpr}); });
+      if(MEMO.on){ var mv=MSV.map;   // v1.26 スケッチの絵は、スケッチの枠で覚えた画角で描く
+        oc=memoAsMap(function(){ return exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,1,mv?mv.rot:(S.V.rot||0),
+          mv?{cx:mv.c[0],cy:mv.c[1],scale:mv.sc*dpr}:{cx:S.V.cx,cy:S.V.cy,scale:S.V.scale*dpr}); });
         document.getElementById('memoSplitTag').textContent='スケッチ（タップで操作）'; }
       else { if(!MEMO.pages.length) MEMO.pages.push(memoNewPage());
         var pg=MEMO.pages[MEMO.cur], keep={}, k, j, m=12, sc=Math.min(pw/(MEMO_W+2*m),ph/(MEMO_H+2*m)), ms=S.meas;
         for(j=0;j<MEMO_KEYS.length;j++){ k=MEMO_KEYS[j]; keep[k]=S[k]; }
         var kg=MEMO.grid; memoPut(pg); MEMO.grid=pg.grid||'grid'; MEMO.on=true; MEMO_SNAP=true; S.meas=null;
-        try{ oc=exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,1,0,{cx:MEMO_W/2,cy:MEMO_H/2,scale:sc}); }
+        var vv=MSV.memo?{cx:MSV.memo.c[0],cy:MSV.memo.c[1],scale:MSV.memo.sc*dpr}:{cx:MEMO_W/2,cy:MEMO_H/2,scale:sc};   // v1.26 メモの絵も覚えた画角で
+        try{ oc=exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,1,0,vv); }
         finally{ for(j=0;j<MEMO_KEYS.length;j++){ k=MEMO_KEYS[j]; S[k]=keep[k]; } MEMO.on=false; MEMO_SNAP=false; MEMO.grid=kg; S.meas=ms; render(); }
         document.getElementById('memoSplitTag').textContent='メモ「'+pg.name+'」（タップで操作）'; }
       g.clearRect(0,0,pw,ph); g.drawImage(oc,0,0);
     }catch(e){ g.fillStyle='#cfd5dc'; g.fillRect(0,0,pw,ph); } }
   function memoSplitLayout(){ memoSplitClasses(); if(typeof updateFit==='function') updateFit(); memoSnap(); render(); }
-  function memoSplitStart(){ MSES=true; if(!MEMO.on) memoEnter();
+  function memoSplitStart(){ MSV={}; if(!MEMO.on) MSV.map={c:s2w(cssW/2,cssH/2),sc:S.V.scale,rot:S.V.rot||0};   // v1.26 全画面の中心のもの → スケッチの枠の中心へ
+    MSES=true; if(!MEMO.on) memoEnter();
     memoSplitClasses(); var pg=MEMO.pages[MEMO.cur]; if(pg){ pg.view=null; memoFit(); }   // 向きを決めてから、見えている側に用紙を合わせる
     memoSplitLayout(); memoUi(); }
-  function memoSplitEnd(){ if(MEMO.on) memoLeave(true); MSES=false; memoSplitLayout(); memoUi(); }
+  function memoSplitEnd(){ memoPaneSave(); if(MEMO.on) memoLeave(true); MSES=false; memoSplitClasses();
+    memoPaneApply();   // v1.26 スケッチの枠の中心にあったものを全画面の中心へ
+    MSV={}; memoSplitLayout(); memoUi(); }
   // 絵の側をタップしたら操作する側を入れ替える
   function memoSplitSwap(){ if(!MSES) return;
+    memoPaneSave();   // v1.26 いま操作している側の画角を覚えてから入れ替える
     if(MEMO.on){ memoLeave(true); } else { memoEnter(); }
-    memoSplitClasses(); if(MEMO.on){ var pg=MEMO.pages[MEMO.cur]; if(pg&&!pg.view) memoFit(); }
+    memoSplitClasses();
+    if(!memoPaneApply()&&MEMO.on){ var pg=MEMO.pages[MEMO.cur]; if(pg&&!pg.view) memoFit(); }   // 覚えていればその画角に戻す
     memoSplitLayout(); memoUi(); }
   // 設定のシート（📝 の長押し）
   function memoSetOpen(){ memoSetSync(); document.getElementById('memoSet').classList.add('open'); }
@@ -6135,6 +6169,7 @@
                :('読めない形式でした: '+raw+'（そのまま入れました）'));
     render(); }
   function closeModal(){ sdOff();   // v1.10 記入欄を閉じたら必ず解除する
+    if(S.leaderPrev){ S.leaderPrev=null; render(); }   // v1.26 旗揚げの下書きの線を消す
     modalBack.style.display='none';
     modalBack.classList.remove('anchored');
     el('modal').classList.remove('anchored'); el('modal').classList.remove('below');
@@ -6392,7 +6427,9 @@
     if(S.leaderTip==null&&li>=0){ openModal('leader',li,null); return; }
     var w=s2w(px,py);
     if(S.leaderTip==null){ S.leaderTip=[w[0],w[1]]; el('leaderInfo').textContent='② 文字を置く位置をタップ'; render(); }
-    else { var tip=S.leaderTip; S.leaderTip=null; el('leaderInfo').textContent='① 指したい位置（矢印の先）をタップ'; openModal('leader',null,[tip,[w[0],w[1]]]); render(); } }
+    else { var tip=S.leaderTip; S.leaderTip=null; el('leaderInfo').textContent='① 指したい位置（矢印の先）をタップ';
+      S.leaderPrev=[tip,[w[0],w[1]]];   // v1.26 1 点目と 2 点目を結ぶ下書きの線（記入欄を閉じるまで）
+      openModal('leader',null,[tip,[w[0],w[1]]]); render(); } }
   function tapSym(px,py){ var si=hitSym(px,py); if(si>=0){ openModal('sym',si,null); return; }
     var w=s2w(px,py); var sy={id:uid(),x:w[0],y:w[1],sym:S.symId,size:S.symSize,layer:S.layer,label:''};
     symFixLayer(sy);            // v0.49: 湧水は必ず RM_BLUE
@@ -6875,6 +6912,7 @@
       :('線のスタイル（'+(S.tool==='line'?'\ud83d\udccf 折れ線':'\u270f\ufe0f ペン')+'）');
     var lwr=document.getElementById('lwRow'); if(lwr) lwr.classList.remove('dim');   // v1.22 線ごとに変えられる
     syncLwBtns();   // v1.22 いま見ている相手（線 or ツールの既定）の太さを示す
+    syncLineColor();   // v1.26 色も
     var hnt=document.getElementById('lsHint'); if(hnt) hnt.classList.toggle('hidden',ed);
     lsBadges(); }
   function openLineSheet(){ syncLineStyleUI(); syncLwBtns();
@@ -7055,6 +7093,17 @@
   // v1.22 線の太さは線ごと（lwm）。線をタップ中ならその線、ふだんはツールの既定を見る。
   //   標準（1）は欄を持たせない（undefined）。従来の線・従来の出力とバイト一致にするため。
   function lwmOf(o){ var v=o&&o.lwm; return (v>0)?v:1; }
+  // v1.26 線の色（＝レイヤー）。✥ でタップした線ならその線だけ（履歴に載る）、ふだんは次に描く線の色（左の色と同じ）。
+  function lineColorList(){ var a=palNorm().slice(), cur=lsRef().layer; if(cur!=null&&a.indexOf(cur)<0&&LAYERS[cur]) a.push(cur); return a; }
+  function syncLineColor(){ var box=document.getElementById('lcBox'); if(!box) return; var cur=lsRef().layer;
+    box.innerHTML='';
+    lineColorList().forEach(function(i){ var L=LAYERS[i]; if(!L) return; var b=document.createElement('button');
+      b.type='button'; b.className='lcSw'+(i===cur?' on':''); b.style.background=L.color; b.title=L.name; b.setAttribute('aria-label',L.name);
+      b.onclick=function(){ setLineColor(i); }; box.appendChild(b); }); }
+  function setLineColor(i){ var o=lsTarget();
+    if(o){ lsApply({layer:i}); }
+    else { setLayer(i); if(S.poly) S.poly.layer=i; if(S.cur) S.cur.layer=i; }
+    syncLineColor(); render(); if(T3&&T3.open) refreshTextureSoon(60); }
   function syncLwBtns(){ var cur=lwmOf(lsRef());
     [].forEach.call(document.querySelectorAll('.lwBtn'),function(b){
       b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-lw'))-cur)<0.01); }); }
