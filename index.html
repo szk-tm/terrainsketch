@@ -2665,7 +2665,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.32';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.33';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5635,10 +5635,20 @@
   function memoOpBegin(op,ph,e){ var g=memoPhGeom(ph);
     MP.op=op; MP.pid=e.pointerId; MP.id=ph.id; MP.x0=e.clientX; MP.y0=e.clientY;
     MP.ph0={x:ph.x,y:ph.y,mw:ph.mw,mrot:ph.mrot,w0:memoPhW(ph),cx:g.cx,cy:g.cy,
-      d0:Math.max(1,Math.hypot(e.clientX-g.cx,e.clientY-g.cy)),a0:Math.atan2(e.clientY-g.cy,e.clientX-g.cx)}; }
+      d0:Math.max(1,Math.hypot(e.clientX-g.cx,e.clientY-g.cy)),a0:Math.atan2(e.clientY-g.cy,e.clientX-g.cx)};
+    if(op==='size'){   // v1.33 つまんだ角の対角を固定する（画面の座標で基点を覚え、ワールドの座標も添える）
+      var l=memoLocal(g,e.clientX,e.clientY), sx=(l[0]>=0)?1:-1, sy=(l[1]>=0)?1:-1, c=Math.cos(g.rad), s=Math.sin(g.rad);
+      var alx=-sx*g.w/2, aly=-sy*g.h/2, ax=g.cx+alx*c-aly*s, ay=g.cy+alx*s+aly*c;
+      MP.ph0.sx=sx; MP.ph0.sy=sy; MP.ph0.ax=ax; MP.ph0.ay=ay; MP.ph0.asp=g.h/Math.max(1e-6,g.w);
+      MP.ph0.awx=ph.x+(ax-g.cx)/S.V.scale; MP.ph0.awy=ph.y-(ay-g.cy)/S.V.scale; } }
   function memoOpMove(e){ var ph=memoPhById(MP.id), b=MP.ph0; if(!ph) return;
     if(MP.op==='move'){ ph.x=b.x+(e.clientX-MP.x0)/S.V.scale; ph.y=b.y-(e.clientY-MP.y0)/S.V.scale; }
-    else if(MP.op==='size'){ var d=Math.hypot(e.clientX-b.cx,e.clientY-b.cy); ph.mw=Math.max(10,Math.min(MEMO_W*1.5,b.w0*d/b.d0)); }
+    else if(MP.op==='size'){   // v1.33 対角（b.ax, b.ay）は動かさず、そこから指までの長さで大きさを決める（縦横比は保つ）
+      var g=memoPhGeom(ph), c=Math.cos(g.rad), s=Math.sin(g.rad), dx=e.clientX-b.ax, dy=e.clientY-b.ay;
+      var lx=(dx*c+dy*s)*b.sx, ly=(-dx*s+dy*c)*b.sy, wpx=Math.max(lx,ly/b.asp,1);
+      var wmm=Math.max(10,Math.min(MEMO_W*1.5,wpx/S.V.scale)); wpx=wmm*S.V.scale;
+      var hpx=wpx*b.asp, clx=b.sx*wpx/2, cly=b.sy*hpx/2, ox=clx*c-cly*s, oy=clx*s+cly*c;   // 対角から新しい中心まで（画面）
+      ph.mw=wmm; ph.x=b.awx+ox/S.V.scale; ph.y=b.awy-oy/S.V.scale; }
     else if(MP.op==='rot'){ var a=Math.atan2(e.clientY-b.cy,e.clientX-b.cx), deg=((b.mrot||0)+(a-b.a0)*180/Math.PI)%360;
       if(deg<0) deg+=360; var sn=Math.round(deg/15)*15; if(Math.abs(deg-sn)<=4) deg=sn%360;   // 15° ごとに吸い付く
       ph.mrot=Math.round(deg*10)/10; }
@@ -7966,7 +7976,7 @@
       var body='', G=dimGroup[b.rec.dimg+'#'+(b.rec.dseg|0)]||{s:[],t:[]};
       var keep=OWN; OWN=b.h;                     // 中身の所有者はこのブロック
       G.s.forEach(function(st){ var L=LAYERS[st.layer]||LAYERS[0];
-        body+=wPoly(L.name,st.pts,false,null,st.lwm); });
+        body+=wPoly(L.name,st.pts,false,null,st.lwm||1); });   // v1.33 標準も 0.35 mm をはっきり（Rhino は BYLAYER のレイヤーの太さを読まない）
       G.t.forEach(function(t){ var L=LAYERS[t.layer]||LAYERS[0];
         var rt=t.rot||0, tvx=-Math.sin(rt), tvy=Math.cos(rt);
         body+=wMText(L.name,t.x+tvx*t.h,t.y+tvy*t.h,t.h,t.t,rt); });
@@ -8100,15 +8110,16 @@
       if(st.hatch&&st.closed){
         // 塗り(HATCH・透明)は _HATCH レイヤ、輪郭線は通常レイヤ（画面表示と同じ二層）
         dxf+=wHatch(L.name+'_HATCH',st.pts);
-        dxf+=wPoly(L.name,st.pts,true,st.dash?dashLt(st.dashM||DASH_M):null);
+        dxf+=wPoly(L.name,st.pts,true,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm||1);   // v1.33 輪郭線に太さを渡し忘れていた
       } else {
-        dxf+=wPoly(L.name,st.pts,!!st.closed,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm);
+        // v1.33 標準（lwm なし）も 370 = 35 をはっきり書く。BYLAYER だと Rhino はレイヤーの 0.35 mm を読まず、細より細く見えた
+        dxf+=wPoly(L.name,st.pts,!!st.closed,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm||1);
       }
       // v0.91: 両髭線の髭は**個別のポリライン**として出す。複合線種（線種にシェイプを
       // 埋める方式）は SHX の同梱が要るうえ SXF では分解されるため、受け手で崩れる。
       // 実ジオメトリなら DXF/SXF どちらの基本要素でも確実に残る（調査報告 テーマ3）。
       if(st.tick) tickSegs(st.pts,st.tickP,st.tickL,!!st.closed).forEach(function(g){
-        dxf+=wPoly(L.name,g,false,null,st.lwm); });
+        dxf+=wPoly(L.name,g,false,null,st.lwm||1); });   // v1.33 髭も
     });
     // 複数行は MTEXT 1 個にまとめる（v0.30）。旧実装は行ごとに TEXT を出していたため
     // Rhino/AutoCAD で 2 行目が別オブジェクトとして読まれていた。
