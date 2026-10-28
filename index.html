@@ -369,9 +369,13 @@
   #memoBar .mTabs{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;}
   #memoBar .mTab{white-space:nowrap;min-height:40px;padding:0 18px;border:0;border-right:1px solid #d4d0c8;border-radius:0;
     background:transparent;color:#323130;font-size:15px;font-weight:500;}
-  #memoBar .mTab.on{background:#fff;color:#1b1b1b;font-weight:700;box-shadow:inset 0 -3px 0 #107c41;}
+  /* v1.31 今の用紙のタブは緑（Excel のシートと同じ #107c41）・白い文字（利用者要望） */
+  #memoBar .mTab.on{background:#107c41;color:#fff;font-weight:700;box-shadow:inset 0 -3px 0 #0b5a2f;}
   #memoBar .mAdd{min-width:48px;min-height:40px;border:0;background:transparent;color:#323130;font-size:22px;}
-  #btnMemo.on{background:var(--accent,#f5a524);color:#1a1206;}
+  /* v1.31 📝 の ON は緑（ほかのボタンの ON の橙と見分けて「メモにいる」ことを示す・利用者要望） */
+  /* v1.32 上のバーの `#top button.on{… !important}`（すべての ON を橙に）に負けていたので、id 2 つ ＋ !important で必ず勝たせる */
+  #top #btnMemo.on{background:#107c41!important;color:#fff!important;border-color:#0b5a2f!important;}
+  #btnMemo .memoIco{display:block;margin:auto;}
   /* v1.24 メモでもボタンの並びは変えない（隠すと位置がずれる）。使えないものは薄くして押せなくする。
      方位のボタンだけは中身をグリッドの切り替えに替える。 */
   body.memo #btnGps, body.memo #btn3d, body.memo #tMeas{opacity:.3;filter:grayscale(1);pointer-events:none;}
@@ -790,7 +794,7 @@
   <div class="shRow"><span class="shLab">表示</span>
     <div class="szBox"><button class="szBtn msBtn" data-ms="0" type="button">全画面</button>
       <button class="szBtn msBtn" data-ms="1" type="button">分割</button></div></div>
-  <div class="muted2">分割にすると、📝 でスケッチとメモを並べて表示します。横持ちは左右（スケッチが左・メモが右）、縦持ちは上下（スケッチが上・メモが下）。操作するのは片方で、もう片方をタップすると入れ替わります。この設定は端末に覚えます。</div>
+  <div class="muted2">分割にすると、メモのボタンでスケッチとメモを並べて表示します。横持ちは左右（スケッチが左・メモが右）、縦持ちは上下（スケッチが上・メモが下）。操作するのは片方で、もう片方をタップすると入れ替わります。この設定は端末に覚えます。</div>
 </div></div>
 <!-- v1.25 分割表示で、操作していない側に出す絵 -->
 <div id="memoSplit"><canvas id="memoSplitCv"></canvas><div class="msTag" id="memoSplitTag"></div></div>
@@ -816,7 +820,7 @@
   <button class="ghost" id="btnNorth" title="地図の向き（タップで北を上に戻す／長押しで回転ロック）"><span class="na" id="northArrow">↑</span><span class="nl" id="northLbl">N</span><span class="mgl" id="memoGridLbl">方眼</span></button>
   <button class="ghost ico" id="btnFit" title="全体表示">⤢</button>
   <!-- v1.23 メモ（A3 のメモ用紙）。もう一度押すとスケッチに戻る。スナップの左隣（利用者の指定）。 -->
-  <button class="ghost ico" id="btnMemo" title="メモ（A3 のメモ用紙。もう一度押すとスケッチに戻る）" aria-pressed="false">📝</button>
+  <button class="ghost ico" id="btnMemo" title="メモ（A3 のメモ用紙。もう一度押すとスケッチに戻る）" aria-pressed="false" aria-label="メモ"><svg class="memoIco" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.8h10a2.2 2.2 0 0 1 2.2 2.2v10.4l-5.6 5.8H7a2.2 2.2 0 0 1-2.2-2.2V5a2.2 2.2 0 0 1 2.2-2.2z"/><path d="M19.2 15.4h-3.4a2.2 2.2 0 0 0-2.2 2.2v3.6"/><path d="M8.6 7.6h6.8M8.6 10.6h6.8M8.6 13.6h6.8"/></svg></button>
   <button class="ghost ico" id="btnSnap" title="スナップ（既存の線の端点・線上に吸着）" aria-pressed="true">🧲</button>
   <button class="ghost ico" id="btnGps" title="GPS（現在地を表示）">📍</button>
   <button class="ghost ico hidden" id="btnPen" title="ペン優先モード: Apple Pencil=作図 / 指=移動・ズーム">✍️</button>
@@ -967,7 +971,7 @@
     <div class="dPane" id="paneOut" role="tabpanel">
     <div class="dSec">書き出し / 取り込み</div>
     <div class="dBtns">
-      <button id="btnMemoPdfOut" class="ghost">📝 メモを PDF で書き出す（A3・全ページ）</button>
+      <button id="btnMemoPdfOut" class="ghost">メモを PDF で書き出す（A3・全ページ）</button>
       <button id="btnDxf" class="primary">⬇ DXF書き出し</button>
       <button id="btnZip" class="primary">📦 一括書き出し(ZIP)</button>
       <button id="btnGeoPdf">🗺 GeoPDF書き出し</button>
@@ -1168,7 +1172,7 @@
       <button class="szBtn lwBtn" data-lw="2.2" type="button" style="min-width:52px;">極太</button>
     </div></div>
   <div class="muted2" id="lsHint">線種は ✏️ペンと📏折れ線で別々に覚えます（ツールボタン右下の ─ ┅ ┼ が今の線種です）。<b>描いた線の線種を変えるときは、✥ に切り替えてその線をタップ</b>してください。</div>
-  <div class="muted2">点線の間隔・髭の間隔と長さは、いずれも図上の実寸[m]です（ズームで変わりません）。髭は線の左右へ長さの半分ずつ出ます。<b>太さは線ごと</b>に持ち、DXF（線の太さ 0.13 / 0.25 / 0.50 / 0.70 mm）と GeoPDF にもそのまま出ます。画面全体の見やすさは ☰ ＞ 設定 の「画面の線の太さ」で変えられます（出力には影響しません）。</div>
+  <div class="muted2">点線の間隔・髭の間隔と長さは、いずれも図上の実寸[m]です（ズームで変わりません）。髭は線の左右へ長さの半分ずつ出ます。<b>太さは線ごと</b>に持ち、DXF（線の太さ 0.20 / 0.35 / 0.53 / 0.80 mm）と GeoPDF にもそのまま出ます。画面全体の見やすさは ☰ ＞ 設定 の「画面の線の太さ」で変えられます（出力には影響しません）。</div>
   <button class="ghost" id="lineSheetClose">閉じる</button>
 </div></div>
 
@@ -2661,7 +2665,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.26';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.32';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5483,7 +5487,8 @@
     c.width=pw; c.height=ph; var g=c.getContext('2d');
     try{
       if(MEMO.on){ var mv=MSV.map;   // v1.26 スケッチの絵は、スケッチの枠で覚えた画角で描く
-        oc=memoAsMap(function(){ return exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,1,mv?mv.rot:(S.V.rot||0),
+        var snapLw=dpr/Math.max(1,pw/2000);   // v1.27 画面と同じ太さ（dpr 倍で描いて縮めて見せるため）
+        oc=memoAsMap(function(){ return exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,snapLw,mv?mv.rot:(S.V.rot||0),
           mv?{cx:mv.c[0],cy:mv.c[1],scale:mv.sc*dpr}:{cx:S.V.cx,cy:S.V.cy,scale:S.V.scale*dpr}); });
         document.getElementById('memoSplitTag').textContent='スケッチ（タップで操作）'; }
       else { if(!MEMO.pages.length) MEMO.pages.push(memoNewPage());
@@ -5491,7 +5496,7 @@
         for(j=0;j<MEMO_KEYS.length;j++){ k=MEMO_KEYS[j]; keep[k]=S[k]; }
         var kg=MEMO.grid; memoPut(pg); MEMO.grid=pg.grid||'grid'; MEMO.on=true; MEMO_SNAP=true; S.meas=null;
         var vv=MSV.memo?{cx:MSV.memo.c[0],cy:MSV.memo.c[1],scale:MSV.memo.sc*dpr}:{cx:MEMO_W/2,cy:MEMO_H/2,scale:sc};   // v1.26 メモの絵も覚えた画角で
-        try{ oc=exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,1,0,vv); }
+        try{ oc=exportComposite({xmin:0,ymin:0,xmax:1,ymax:1},pw,ph,null,null,true,dpr/Math.max(1,pw/2000),0,vv); }   // v1.27 画面と同じ太さ
         finally{ for(j=0;j<MEMO_KEYS.length;j++){ k=MEMO_KEYS[j]; S[k]=keep[k]; } MEMO.on=false; MEMO_SNAP=false; MEMO.grid=kg; S.meas=ms; render(); }
         document.getElementById('memoSplitTag').textContent='メモ「'+pg.name+'」（タップで操作）'; }
       g.clearRect(0,0,pw,ph); g.drawImage(oc,0,0);
@@ -5739,15 +5744,21 @@
     memoBarSync(); render(); toast('グリッド: '+MEMO_GRID_LBL[MEMO.grid]); }
   // ---- PDF --------------------------------------------------------------------------------
   // 用紙 i を裏で描いて JPEG のバイト列にする（メモ中でなくても描ける）
+  // v1.27 線の太さの基準: 用紙全体を表示したときの画面の縮尺（memoFit → fitBox と同じ式・余白 12 mm・回転 0）
+  function memoRefScale(){ return 0.92*Math.min(cssW/(MEMO_W+24),cssH/(MEMO_H+24)); }
+  // v1.27 書き出しの線の太さの倍率: 紙に対して、画面（用紙全体を表示）と同じ割合の太さにする。
+  //   exportComposite は EXPORT_LW = max(1, pxW/2000) × lwMul なので、その分を割り戻して渡す。
+  function memoLwMul(pxW){ var target=(pxW/MEMO_W)/Math.max(1e-6,memoRefScale()); return target/Math.max(1,pxW/2000); }
   function memoRenderPage(i,pxW,pxH){ var was=MEMO.on, cur={}, k, j, v={cx:S.V.cx,cy:S.V.cy,scale:S.V.scale,rot:S.V.rot}, ms=S.meas;
     if(was) memoStash();
     for(j=0;j<MEMO_KEYS.length;j++){ k=MEMO_KEYS[j]; cur[k]=S[k]; }
-    memoPut(MEMO.pages[i]); MEMO.on=true; S.meas=null;
+    var pg=MEMO.pages[i], kg=MEMO.grid;
+    memoPut(pg); MEMO.on=true; S.meas=null; MEMO.grid=pg.grid||'grid';   // v1.27 その用紙のグリッドで描く
     var oc;
-    try{ oc=exportComposite({xmin:0,ymin:0,xmax:MEMO_W,ymax:MEMO_H},pxW,pxH,null,null,true,1,0,
+    try{ oc=exportComposite({xmin:0,ymin:0,xmax:MEMO_W,ymax:MEMO_H},pxW,pxH,null,null,true,memoLwMul(pxW),0,
         {cx:MEMO_W/2,cy:MEMO_H/2,scale:pxW/MEMO_W}); }
     finally { for(j=0;j<MEMO_KEYS.length;j++){ k=MEMO_KEYS[j]; S[k]=cur[k]; }
-      MEMO.on=was; S.meas=ms; S.V.cx=v.cx; S.V.cy=v.cy; S.V.scale=v.scale; S.V.rot=v.rot; render(); }
+      MEMO.on=was; MEMO.grid=kg; S.meas=ms; S.V.cx=v.cx; S.V.cy=v.cy; S.V.scale=v.scale; S.V.rot=v.rot; render(); }
     var u=oc.toDataURL('image/jpeg',0.9), bin=atob(u.slice(u.indexOf(',')+1)), a=new Uint8Array(bin.length);
     for(j=0;j<bin.length;j++) a[j]=bin.charCodeAt(j);
     return a; }
@@ -5774,7 +5785,7 @@
     add(s);
     var out=new Uint8Array(len), at=0; for(i=0;i<parts.length;i++){ out.set(parts[i],at); at+=parts[i].length; }
     return out; }
-  function memoPdf(){ if(!MEMO.pages.length){ toast('メモの用紙がまだありません（📝 で作れます）',true); return; }
+  function memoPdf(){ if(!MEMO.pages.length){ toast('メモの用紙がまだありません（メモのボタンで作れます）',true); return; }
     var pxW=Math.round(MEMO_W/25.4*MEMO_DPI), pxH=Math.round(MEMO_H/25.4*MEMO_DPI);
     showLoad('メモを PDF にしています…');
     setTimeout(function(){ try{
@@ -5791,13 +5802,13 @@
     ['pointerup','pointercancel','pointerleave'].forEach(function(ev){ b.addEventListener(ev,function(){ clearTimeout(t); }); });
     b.onclick=function(){ if(held){ held=false; return; }
       if(MSES){ memoSplitEnd(); toast('分割表示を終えました'); return; }
-      if(memoSplitPref()){ memoSplitStart(); toast('分割表示（もう片方をタップで入れ替え・📝 で終わる）'); return; }
+      if(memoSplitPref()){ memoSplitStart(); toast('分割表示（もう片方をタップで入れ替え・メモのボタンで終わる）'); return; }
       if(MEMO.on){ memoLeave(); toast('スケッチに戻りました'); }
-      else { memoEnter(); toast('メモモード（A3）。もう一度 📝 でスケッチに戻ります'); } }; })();
+      else { memoEnter(); toast('メモモード（A3）。もう一度メモのボタンでスケッチに戻ります'); } }; })();
   [].forEach.call(document.querySelectorAll('.msBtn'),function(b){ b.onclick=function(){
       var on=b.getAttribute('data-ms')==='1'; memoSplitSetPref(on); memoSetSync();
       if(!on&&MSES){ var wasMemo=MEMO.on; MSES=false; memoSplitLayout(); if(wasMemo){ var pg=MEMO.pages[MEMO.cur]; if(pg) pg.view=null; memoFit(); render(); } memoUi(); }
-      toast(on?'メモを分割で表示します（📝 で始まります）':'メモを全画面で表示します'); }; });
+      toast(on?'メモを分割で表示します（メモのボタンで始まります）':'メモを全画面で表示します'); }; });
   document.getElementById('msClose').onclick=memoSetClose;
   document.getElementById('memoSplit').addEventListener('pointerdown',function(e){ e.preventDefault(); memoSplitSwap(); });
   window.addEventListener('resize',function(){ if(MSES) setTimeout(memoSplitLayout,60); });
@@ -7826,7 +7837,7 @@
       +p(9,'$LTSCALE')+p(40,'1.0')+p(9,'$CELTSCALE')+p(40,'1.0')
       +p(9,'$PLINEGEN')+p(70,1)             // v0.79: 以後 CAD 側で描く線にも線種生成を引き継ぐ
       // v1.22 線の太さを 1 本でも持つ図面は、CAD で開いたときに太さが見えるようにする（持たない図面は従来どおり）
-      +(S.strokes.some(function(st){ return st.lwm>0; })?p(9,'$LWDISPLAY')+p(290,1):'')
+      +p(9,'$LWDISPLAY')+p(290,1)   // v1.30 レイヤーの既定が 0.35 mm になったので常に太さを表示する
       +p(0,'ENDSEC');
 
     // ---- TABLES --------------------------------------------------------
@@ -7881,7 +7892,10 @@
     function lrec(name,aci,hex){ var o=trec('LAYER','AcDbLayerTableRecord')
       +p(2,name)+p(70,0)+p(62,aci);
       if(hex) o+=p(420,trueCol(hex));
-      return o+p(6,'CONTINUOUS')+p(370,-3)+p(390,PSP); }
+      // v1.30 標準の線（BYLAYER）を 0.35 mm に。AutoCAD は 0.25 mm 以下をすべて 1 画素で描くので、既定（-3 ＝ 0.25）だと細と標準が見分けられない。
+      //   レイヤー 0 は CAD の既定のまま。
+      //   35 は lwCode の標準と同じ値。変数にしない（レイヤー表は lwCode の宣言より先に書かれ、変数だと未代入＝undefined になる）。
+      return o+p(6,'CONTINUOUS')+p(370,(name==='0')?-3:35)+p(390,PSP); }
     dxf+=lrec('0',7);   // 既定エントリ（常に出す）
     // v1.08: 断面図の SF_ レイヤーは True Color を書かず ACI だけ（SF_TEXT は 7＝背景で白黒が反転）。黒背景の AutoCAD で墨の文字が沈んでいた
     idx.forEach(function(i){ var L=LAYERS[i]; dxf+=lrec(L.name,L.aci,(L.added&&L.name.indexOf('SF_')!==0)?L.color:null); });
@@ -7976,7 +7990,12 @@
     // v0.44: lwm があれば線の太さ(370)を書く。単位は 1/100mm。
     // 既定（lwm 無し）では 370 を書かないので、従来の出力はバイト単位で変わらない。
     // v1.22 極太（2.2）に 0.70 mm を足した。既存の値（0.5 / 0.7 / 1.5 / 2）の対応は変えていない。
-    function lwCode(m){ return (m<0.85)?13:((m<1.25)?25:((m<2.1)?50:70)); }
+    // v1.30 アプリの見た目と同じ割合にする: 「標準 0.35 mm × アプリの倍率」にいちばん近い CAD の標準の太さ（1/100 mm）。
+    //   細 0.6 → 20 / 標準 1 → 35 / 太 1.5 → 53 / 極太 2.2 → 80。v1.29 までは 13 / 25 / 50 / 70 で、割合がずれていた。
+    //   関数の中で完結させる（試験は lwCode だけを取り出して動かす）。35 はレイヤーの既定（lrec）と同じ値。
+    function lwCode(m){ var L=[5,9,13,15,18,20,25,30,35,40,50,53,60,70,80,90,100,106,120,140,158,200,211], t=35*m, best=L[0], i;
+      for(i=1;i<L.length;i++) if(Math.abs(L[i]-t)<Math.abs(best-t)) best=L[i];
+      return best; }
     function wPoly(layer,P,closed,ltype,lwm){
       // v0.79: 線種付きのポリラインは group 70 に bit 128（線種生成 / AutoCAD の PLINEGEN）を立てる。
       //   OFF だと破線パターンが頂点ごとに先頭から仕切り直され、頂点間隔がダッシュ長より
@@ -8060,16 +8079,19 @@
       var hx=ddx*_c-ddy*_s, hy=ddx*_s+ddy*_c;
       if(hx<-1e-9||(Math.abs(hx)<=1e-9&&hy<0)){ var tmp=da; da=db; db=tmp; }
       return ehead('DIMENSION',L.name)
-        +p(100,'AcDbDimension')+p(280,0)+p(2,b.name)
+        // v1.28 280（版番号）は DXF 2010 形式（AC1024）から。この DXF は AC1018（2004 形式）なので書かない
+        //   （書くと AutoCAD が「DXF グループ コード: 280 が正しくありません」で読み込みをやめる）
+        +p(100,'AcDbDimension')+p(2,b.name)
         +p(10,d.B[0].toFixed(4))+p(20,d.B[1].toFixed(4))+p(30,'0.0')
         +p(11,d.tc[0].toFixed(4))+p(21,d.tc[1].toFixed(4))+p(31,'0.0')
         +p(70,129)+p(71,5)+p(72,1)+p(41,'1.0')
         +p(1,encDxf(d.t))+p(3,d._st||'Standard')
+        // v1.29 平行寸法（70 の種類 1）の AcDbAlignedDimension は 13 と 14 だけ（AutoCAD 自身が書く形）。
+        //   12/22/32（複製の基点）は AutoCAD が「グループ コード: 12 が正しくありません」で読み込みをやめた。
+        //   50（回転角）は回転寸法（種類 0）だけの項目。どちらも書かない。
         +p(100,'AcDbAlignedDimension')
-        +p(12,'0.0')+p(22,'0.0')+p(32,'0.0')
         +p(13,da[0].toFixed(4))+p(23,da[1].toFixed(4))+p(33,'0.0')
-        +p(14,db[0].toFixed(4))+p(24,db[1].toFixed(4))+p(34,'0.0')
-        +p(50,'0.0'); }
+        +p(14,db[0].toFixed(4))+p(24,db[1].toFixed(4))+p(34,'0.0'); }
     dimBlks.forEach(function(b){ dxf+=wDim(b); });
     // v1.03: 複数の線で囲まれた領域のハッチ。輪郭線は元の線が別に出るので塗りだけ
     (S.hatches||[]).forEach(function(h){ var L=LAYERS[h.layer]||LAYERS[0]; if(h.pts.length<3)return; dxf+=wHatch(L.name+'_HATCH',h.pts); });
