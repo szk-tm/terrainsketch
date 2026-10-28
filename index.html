@@ -2668,7 +2668,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.34';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.35';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -3040,7 +3040,9 @@
     ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,cssW,cssH);
     ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,cssW,cssH); ctx.imageSmoothingEnabled=true;
     var SK=!EXPORTING||EXPORT_SKETCH!==false;
-    if((typeof MEMO!=='undefined'&&MEMO.on)){ memoPaper();   // v1.23 メモ用紙（地図の代わり）
+    if((typeof MEMO!=='undefined'&&MEMO.on)){
+      if(S.V.rot) S.V.rot=0;   // v1.35 メモは絶対に回さない（どの入口から回転が入っても、描くたびに 0 へ。中心まわりの回転なので中心の地点は動かない）
+      memoPaper();   // v1.23 メモ用紙（地図の代わり）
       if(SK&&PHOTOL.vis) S.photos.forEach(function(ph){ if(ph.img) memoDrawImage(ph); }); }   // v1.25 写真は一番下（後から足したものほど上）
     // 背景ラスタは軸並行の drawImage なので、回転はキャンバス変換で与える（w2s0 と対）。
     var ROT=S.V.rot||0;
@@ -5392,7 +5394,8 @@
     else if(S.tool==='erase') eraseAt(px,py);
   }
   // 回転を (px,py) を軸にして適用する
-  function rotateAround(newRot,px,py){ var w=s2w(px,py); S.V.rot=normAng(newRot); anchorTo(w[0],w[1],px,py); }
+  function rotateAround(newRot,px,py){ if(typeof MEMO!=='undefined'&&MEMO.on) return;   // v1.35 メモでは回さない（Shift＋ホイール・北に戻す）
+    var w=s2w(px,py); S.V.rot=normAng(newRot); anchorTo(w[0],w[1],px,py); }
   var ROT_DZ=0.13;   // 回転のデッドゾーン(rad≒7.5°)。ズームだけしたいときに勝手に回らないように
   var ROT_SNAP=0.045; // 北付近(≒2.6°)は 0 に吸着させ、北上に戻しやすくする
   function startPinch(){ var a=pArr(); if(a.length<2)return;
@@ -5574,26 +5577,32 @@
   function memoPaper(){ var a=w2s(0,MEMO_H), b=w2s(MEMO_W,0), w=b[0]-a[0], h=b[1]-a[1];
     // v1.34 用紙は 4 隅を結んだ形で描く（2 点の fillRect だと、画面が回ったとき縦横比が崩れた）
     var q=[w2s(0,MEMO_H),w2s(MEMO_W,MEMO_H),w2s(MEMO_W,0),w2s(0,0)];
-    function quad(dx,dy){ ctx.beginPath(); ctx.moveTo(q[0][0]+dx,q[0][1]+dy); for(var i=1;i<4;i++) ctx.lineTo(q[i][0]+dx,q[i][1]+dy); ctx.closePath(); }
+    //   v1.35 中の小さな関数は memoPaperQuad（quad はほかにもあり、関数を名前で取り出す試験が取り違えうる）
+    function memoPaperQuad(dx,dy){ ctx.beginPath(); ctx.moveTo(q[0][0]+dx,q[0][1]+dy); for(var i=1;i<4;i++) ctx.lineTo(q[i][0]+dx,q[i][1]+dy); ctx.closePath(); }
     if(!EXPORTING||MEMO_SNAP){ ctx.fillStyle='#cfd5dc'; ctx.fillRect(0,0,cssW,cssH);   // v1.25 分割の絵も地を灰色に
-      ctx.fillStyle='rgba(0,0,0,.16)'; quad(4,6); ctx.fill(); }
-    ctx.fillStyle='#ffffff'; quad(0,0); ctx.fill();
+      ctx.fillStyle='rgba(0,0,0,.16)'; memoPaperQuad(4,6); ctx.fill(); }
+    ctx.fillStyle='#ffffff'; memoPaperQuad(0,0); ctx.fill();
     memoGrid(a,b);
     if(!EXPORTING){ ctx.strokeStyle='#9aa3ad'; ctx.lineWidth=1; ctx.strokeRect(a[0]+0.5,a[1]+0.5,w-1,h-1); } }
+  // v1.35 グリッドも用紙の座標（mm）で線の両端を決めて w2s で描く。切り抜きも 4 隅で。
+  //   中の小さな関数は memoGridSeg（seg は断面図の書き出しにもあり、関数を名前で取り出す試験が取り違えた）。
+  //   v1.34 までは 2 点の四角から軸に平行に引いていたので、万一画面が回るとグリッドだけ崩れた。
   function memoGrid(a,b){ var g=MEMO.grid; if(g==='none') return;
     var sc=S.V.scale, k, x, y, step, px;
-    ctx.save(); ctx.beginPath(); ctx.rect(a[0],a[1],b[0]-a[0],b[1]-a[1]); ctx.clip();
+    function memoGridSeg(x0,y0,x1,y1){ var p=w2s(x0,y0), q=w2s(x1,y1); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); }
+    var c=[w2s(0,MEMO_H),w2s(MEMO_W,MEMO_H),w2s(MEMO_W,0),w2s(0,0)];
+    ctx.save(); ctx.beginPath(); ctx.moveTo(c[0][0],c[0][1]); for(k=1;k<4;k++) ctx.lineTo(c[k][0],c[k][1]); ctx.closePath(); ctx.clip();
     if(g==='grid'){ step=5; px=step*sc;
       if(px>=5){ ctx.strokeStyle='rgba(80,140,200,.16)'; ctx.lineWidth=Math.max(0.6,(EXPORTING?EXPORT_LW:1)*0.6); ctx.beginPath();
-        for(k=step;k<MEMO_W;k+=step){ if(k%10===0) continue; x=a[0]+k*sc; ctx.moveTo(x,a[1]); ctx.lineTo(x,b[1]); }
-        for(k=step;k<MEMO_H;k+=step){ if(k%10===0) continue; y=b[1]-k*sc; ctx.moveTo(a[0],y); ctx.lineTo(b[0],y); }
+        for(k=step;k<MEMO_W;k+=step){ if(k%10===0) continue; memoGridSeg(k,0,k,MEMO_H); }
+        for(k=step;k<MEMO_H;k+=step){ if(k%10===0) continue; memoGridSeg(0,k,MEMO_W,k); }
         ctx.stroke(); }
       ctx.strokeStyle='rgba(80,140,200,.34)'; ctx.lineWidth=Math.max(0.8,(EXPORTING?EXPORT_LW:1)*0.8); ctx.beginPath();
-      for(k=10;k<MEMO_W;k+=10){ x=a[0]+k*sc; ctx.moveTo(x,a[1]); ctx.lineTo(x,b[1]); }
-      for(k=10;k<MEMO_H;k+=10){ y=b[1]-k*sc; ctx.moveTo(a[0],y); ctx.lineTo(b[0],y); }
+      for(k=10;k<MEMO_W;k+=10) memoGridSeg(k,0,k,MEMO_H);
+      for(k=10;k<MEMO_H;k+=10) memoGridSeg(0,k,MEMO_W,k);
       ctx.stroke(); }
     else if(g==='line'){ step=8; ctx.strokeStyle='rgba(80,140,200,.38)'; ctx.lineWidth=Math.max(0.8,(EXPORTING?EXPORT_LW:1)*0.8); ctx.beginPath();
-      for(k=MEMO_H-20;k>12;k-=step){ y=b[1]-k*sc; ctx.moveTo(a[0]+12*sc,y); ctx.lineTo(b[0]-12*sc,y); }
+      for(k=MEMO_H-20;k>12;k-=step) memoGridSeg(12,k,MEMO_W-12,k);
       ctx.stroke(); }
     else if(g==='dot'){ step=5; px=step*sc; if(px>=4){ ctx.fillStyle='rgba(60,90,120,.42)'; var r=Math.max(0.9,px*0.07);
       for(x=step;x<MEMO_W;x+=step) for(y=step;y<MEMO_H;y+=step){ var p=w2s(x,y); ctx.fillRect(p[0]-r,p[1]-r,r*2,r*2); } } }
