@@ -453,7 +453,8 @@
   #qpal .qpLw i{display:block;width:22px;height:22px;margin:3px;}
   #qpal .qpLw svg{display:block;width:100%;height:100%;}
   #qpal .qpCol.sel,#qpal .qpLw.sel{background:#f6b500;}
-  #qpal .qpCol.sel i{box-shadow:0 0 0 2px #fff;}   /* 黄・橙の色を選んでも、黄色の縁取りに溶けない */
+  #qpal .qpCol.sel i{box-shadow:0 0 0 2px #fff;}
+  #qpal .qpLw{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}   /* v1.41 長押しで iPad の呼び出しメニューを出さない */   /* 黄・橙の色を選んでも、黄色の縁取りに溶けない */
   #qpal.qs2{padding:5px 6px;border-radius:14px;}
   #qpal.qs2 .qpSep{height:26px;margin:0 6px;}
   #qpal.qs2 .qpCol,#qpal.qs2 .qpLw{width:34px;height:34px;min-height:34px;}
@@ -1056,7 +1057,7 @@
         <button class="szBtn qpSzBtn" data-qps="2" type="button" style="min-width:44px;">中</button>
         <button class="szBtn qpSzBtn" data-qps="3" type="button" style="min-width:44px;">大</button>
       </span></div>
-    <div class="muted2">✏️（フリーハンド）と 📏（折れ線）を選んでいる間、ツールバーの隣に線の色と太さのボタンを出します。選んでいる太さのボタンをもう一度押すと、点線 → 両髭線 → 実線 と線種が変わります。この設定はこの端末に覚え、プロジェクト（.json）には入れません。</div>
+    <div class="muted2">✏️（フリーハンド）と 📏（折れ線）を選んでいる間、ツールバーの隣に線の色と太さのボタンを出します。選んでいる太さのボタンをもう一度押すと、点線 → 両髭線 → 実線 と線種が変わります。線種は太さのボタンごと（✏️・📏 それぞれ）に覚え、ボタンを長押しすると点線の間隔・髭の間隔などの詳しい設定を開きます。この設定と覚えた線種はこの端末に覚え、プロジェクト（.json）には入れません。</div>
     <div class="dSec">外部 GPS</div>
     <div class="muted2" id="xgpsStat">まだ受信していません</div>
     <div class="muted2">AtomS3R に ATOMIC GPS ベースを付け、同梱のファーム（AtomS3R_ClinoGPS）を書き込むと、📍 の現在地に外部 GPS を使います。10 秒途絶えると内蔵の GPS に戻ります。「破棄」が増えるときは、ファームの KEY_GAP_MS を大きくしてください。位置はこの場の表示だけで、プロジェクトには保存しません。</div>
@@ -2767,7 +2768,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.40';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.41';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -7044,9 +7045,11 @@
         o[k]=kv[k]; }
       if(items.length) pushHist({op:'batch',items:items});
       return; }
+    var qpOld=(typeof qpalPreSnap==='function')?qpalPreSnap():null;   // v1.41 変える前のスタイル（太さを変えたら、離れる太さに覚える）
     for(k in kv) S[k]=kv[k];
     if(S.poly){ for(k in kv) S.poly[k]=kv[k]; }   // 作図中の折れ線にも反映
-    lsStash(); lsBadges(); }
+    lsStash(); if(typeof qpalPreCapture==='function') qpalPreCapture(kv,qpOld);   // v1.41 太さごとの線種を覚える
+    lsBadges(); }
   function syncLineStyleUI(){
     [].forEach.call(document.querySelectorAll('.dsBtn'),function(b){
       b.classList.toggle('on',b.getAttribute('data-ds')===lineKind()); });
@@ -7279,6 +7282,51 @@
   //   QP は起動の途中（buildSwatches が先に qpalSync を呼ぶ）でまだ無いことがある → 無ければ何もしない。
   var QPAL_ON=true, QPAL_KEY='ts.qpal', QPAL_SZ_KEY='ts.qpalSize', QP={on:true,size:1};
   var QPAL_KIND_NEXT={'1':'2','2':'0','0':'1'}, QPAL_KIND_NAME={'0':'実線','1':'点線','2':'両髭線'};
+  // v1.41 太さごとの線種（ツールごと）。{pen:{'2.2':{dash,dashM,tick,tickP,tickL}, …}, line:{…}}。端末に覚える。
+  //   QPRE も起動の途中では null のことがある（読むところは全部 null を許す）
+  var QPAL_PRE_KEY='ts.qpalPre', QPRE=null, QPAL_LWS=[2.2,1.5,1,0.6], QPAL_PRE_KEYS=['dash','dashM','tick','tickP','tickL'];
+  var QPAL_LP_MS=500, QLP={t:0,x:0,y:0,b:null};
+  function qpalPreLoad(){ try{ var o=JSON.parse(localStorage.getItem(QPAL_PRE_KEY)||'null'); QPRE=(o&&typeof o==='object'&&!Array.isArray(o))?o:{}; }catch(e){ QPRE={}; } }
+  function qpalPreSave(){ try{ localStorage.setItem(QPAL_PRE_KEY,JSON.stringify(QPRE||{})); }catch(e){} }
+  // 太さの値 → ボタンの鍵（'2.2' など）。ボタンに無い太さ（古い 0.5・2 など）は null（覚えない）
+  function qpalPreKey(v){ for(var i=0;i<QPAL_LWS.length;i++) if(Math.abs(v-QPAL_LWS[i])<0.01) return String(QPAL_LWS[i]); return null; }
+  function qpalPreOf(tool,key){ var t=QPRE&&QPRE[tool], p=t&&key?t[key]:null; return (p&&typeof p==='object')?p:null; }
+  // いまのツールの既定のスタイル（太さと線種一式）。✏️・📏 のときだけ
+  function qpalPreSnap(){ if(S.tool!=='pen'&&S.tool!=='line') return null;
+    return {w:lwmOf(S),dash:!!S.dash,dashM:S.dashM||DASH_M,tick:!!S.tick,tickP:S.tickP||TICK_P,tickL:S.tickL||TICK_L}; }   // 太さは w（線の lwm と取り違えない）
+  function qpalPrePut(key,o){ var t=QPRE[S.tool], p=t?t[key]:null;
+    if(p&&p.dash===o.dash&&p.dashM===o.dashM&&p.tick===o.tick&&p.tickP===o.tickP&&p.tickL===o.tickL) return false;
+    if(!t) t=QPRE[S.tool]={};
+    t[key]={dash:o.dash,dashM:o.dashM,tick:o.tick,tickP:o.tickP,tickL:o.tickL}; return true; }
+  // lsApply（ツールの既定）のあとで呼ぶ。kv は変えた欄、old は変える前（qpalPreSnap）
+  //   ・太さが変わった → 離れる太さのボタンに、それまでの線種を覚える（線のシートの太さの行で変えても）
+  //   ・線種の欄が来た → いまの太さのボタンに、いまの線種を覚える
+  //   太さだけの変更では、行き先の太さに覚えた線種を上書きしない
+  function qpalPreCapture(kv,old){ if(!QPRE||!kv||(S.tool!=='pen'&&S.tool!=='line')) return;
+    var ch=false, i, hit=false, nk=qpalPreKey(lwmOf(S)), ok=old?qpalPreKey(old.w):null;
+    if(old&&('lwm' in kv)&&ok&&ok!==nk) ch=qpalPrePut(ok,old)||ch;
+    for(i=0;i<QPAL_PRE_KEYS.length;i++) if(QPAL_PRE_KEYS[i] in kv) hit=true;
+    if(hit&&nk) ch=qpalPrePut(nk,qpalPreSnap())||ch;
+    if(ch) qpalPreSave(); }
+  // 太さのボタンを押したとき: 覚えた線種があればその一式、無ければ実線（アプリの既定。点線の間隔などは今の値のまま）
+  function qpalPick(v){ var p=qpalPreOf(S.tool,qpalPreKey(v)), kv={lwm:(Math.abs(v-1)<0.01)?undefined:v}, i;   // lwm の書き方は v092test の約束どおり
+    if(p){ for(i=0;i<QPAL_PRE_KEYS.length;i++) if(p[QPAL_PRE_KEYS[i]]!=null) kv[QPAL_PRE_KEYS[i]]=p[QPAL_PRE_KEYS[i]]; }
+    else { kv.dash=false; kv.tick=false; }
+    lsApply(kv); }
+  // 長押し: その太さを選んでから線のシートを開く。離したときのクリック（ボタンやシートの背景に落ちる）は 1 回だけ捨てる
+  //   捨てる窓は「指を離してから 0.4 秒」（長く押し続けても効く）。離すのが来なくても 5 秒で外す
+  function qpalEatClick(){ var until=0;
+    function qpalEatOff(){ document.removeEventListener('click',qpalEatClickH,true);
+      document.removeEventListener('pointerup',qpalEatUpH,true); document.removeEventListener('pointercancel',qpalEatUpH,true); }
+    function qpalEatClickH(e){ var late=until&&Date.now()>until; qpalEatOff(); if(late) return; e.stopPropagation(); e.preventDefault(); }
+    function qpalEatUpH(){ document.removeEventListener('pointerup',qpalEatUpH,true); document.removeEventListener('pointercancel',qpalEatUpH,true);
+      until=Date.now()+400; setTimeout(qpalEatOff,400); }
+    document.addEventListener('click',qpalEatClickH,true);
+    document.addEventListener('pointerup',qpalEatUpH,true); document.addEventListener('pointercancel',qpalEatUpH,true);
+    setTimeout(qpalEatOff,5000); }
+  function qpalLongPress(b){ var v=parseFloat(b.getAttribute('data-qlw'))||1; LSX=null;
+    if(Math.abs(v-lwmOf(S))>=0.01) qpalPick(v);
+    syncLwBtns(); qpalSync(); render(); qpalEatClick(); openLineSheet(); }
   function qpalLoad(){ try{ QP.on=localStorage.getItem(QPAL_KEY)!=='0';
       var z=parseInt(localStorage.getItem(QPAL_SZ_KEY),10); QP.size=(z===2||z===3)?z:1; }catch(e){ QP.on=true; QP.size=1; } }
   function qpalSave(){ try{ if(QP.on) localStorage.removeItem(QPAL_KEY); else localStorage.setItem(QPAL_KEY,'0');
@@ -7315,15 +7363,23 @@
         b.onclick=function(){ LSX=null; setLineColor(li); }; box.appendChild(b); }); }
     [].forEach.call(document.querySelectorAll('.qpLw'),function(b){
       var v=parseFloat(b.getAttribute('data-qlw'))||1, on=Math.abs(v-cur)<0.01, nm=b.getAttribute('data-nm')||'';
+      var pre=qpalPreOf(S.tool,qpalPreKey(v)), sk=on?kind:(pre?qpalKindOf(pre):'0');   // v1.41 選んでいる丸はいまの線種・ほかは覚えた線種（無ければ実線＝押すとそうなる）
       b.classList.toggle('sel',on);
-      var ic=b.querySelector('i'); if(ic&&L) ic.innerHTML=qpalLwSvg(v,L.color,on?kind:'0');
-      var lb=on?(nm+'・'+QPAL_KIND_NAME[kind]+'（もう一度押すと '+QPAL_KIND_NAME[QPAL_KIND_NEXT[kind]]+'）'):nm;
+      var ic=b.querySelector('i'); if(ic&&L) ic.innerHTML=qpalLwSvg(v,L.color,sk);
+      var lb=on?(nm+'・'+QPAL_KIND_NAME[kind]+'（もう一度押すと '+QPAL_KIND_NAME[QPAL_KIND_NEXT[kind]]+'・長押しで詳しい設定）'):(nm+'・'+QPAL_KIND_NAME[sk]+'（長押しで詳しい設定）');
       b.title=lb; b.setAttribute('aria-label',lb); }); }
   [].forEach.call(document.querySelectorAll('.qpLw'),function(b){ b.onclick=function(){
       var v=parseFloat(b.getAttribute('data-qlw'))||1; LSX=null;
       if(Math.abs(v-lwmOf(S))<0.01){ var k=QPAL_KIND_NEXT[qpalKindOf(S)]||'1'; qpalKind(k); toast('線種: '+QPAL_KIND_NAME[k]); }   // v1.40 選んでいる太さ → 線種を回す
-      else lsApply({lwm:(Math.abs(v-1)<0.01)?undefined:v});
-      syncLwBtns(); qpalSync(); render(); }; });
+      else qpalPick(v);   // v1.41 その太さの線種（覚えが無ければ実線）
+      syncLwBtns(); qpalSync(); render(); };
+    // v1.41 長押し（0.5 秒・10 px 以上動いたらやめる）で詳しい設定
+    if(b.addEventListener){
+      b.addEventListener('pointerdown',function(e){ clearTimeout(QLP.t); QLP.x=e.clientX; QLP.y=e.clientY; QLP.b=b;
+        QLP.t=setTimeout(function(){ QLP.t=0; if(QLP.b===b) qpalLongPress(b); },QPAL_LP_MS); });
+      b.addEventListener('pointermove',function(e){ if(QLP.t&&Math.hypot(e.clientX-QLP.x,e.clientY-QLP.y)>10){ clearTimeout(QLP.t); QLP.t=0; } });
+      ['pointerup','pointercancel','pointerleave'].forEach(function(n){ b.addEventListener(n,function(){ if(QLP.t){ clearTimeout(QLP.t); QLP.t=0; } }); });
+      b.addEventListener('contextmenu',function(e){ e.preventDefault(); }); } });
   // v1.40 ☰ ＞ 設定 の「線のパレット」
   function syncQpalSet(){ var b=document.getElementById('btnQpal');
     if(b){ b.textContent=QP.on?'表示する':'表示しない'; b.className=QP.on?'primary':'ghost'; b.style.flex='0 0 auto'; }
@@ -7332,7 +7388,7 @@
       toast(QP.on?'線のパレット: ✏️・📏 のときに出します':'線のパレット: 出しません'); }; })();
   [].forEach.call(document.querySelectorAll('.qpSzBtn'),function(x){ x.onclick=function(){
       QP.size=parseInt(x.getAttribute('data-qps'),10)||1; qpalSave(); syncQpalSet(); qpalSync(); }; });
-  qpalLoad(); syncQpalSet(); qpalSync();
+  qpalLoad(); qpalPreLoad(); syncQpalSet(); qpalSync();
   // v1.22 画面全体の太さ（従来の S.lwf）。☰ ＞ 設定 へ移した。画面の表示だけで出力には効かない。
   function syncLwfBtns(){ [].forEach.call(document.querySelectorAll('.lwfBtn'),function(b){
       b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-lwf'))-(S.lwf||1.7))<0.01); }); }
