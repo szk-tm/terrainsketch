@@ -429,26 +429,43 @@
      左手ではつまみをツールバーの下（z 19）に沈める。ツールバーの上下の外では従来どおり引ける。 */
   body.lefty #tools{left:auto;right:calc(10px + var(--safe-r));}
   body.lefty #edge{z-index:19;}
-  /* v1.39 お試し: 線の色と太さのパレット（✏️・📏 の間だけ・右上）。平面図の見えている領域の右上に寄せる（--planR）。
-     左手モードはツールバー（右 10px・幅 60px）の左隣。つまみ #edge（z 25）より上に置き、押した指を取られないようにする */
-  #qpal{position:fixed;z-index:26;top:calc(60px + var(--safe-t));right:calc(10px + var(--safe-r) + var(--planR));
-    display:none;padding:6px 8px;border-radius:16px;white-space:nowrap;font-size:0;line-height:0;
-    background:rgba(255,255,255,.80);border:1px solid rgba(255,255,255,.6);
-    backdrop-filter:blur(var(--chipBlur)) saturate(1.45);-webkit-backdrop-filter:blur(var(--chipBlur)) saturate(1.45);
-    box-shadow:0 1px 3px rgba(10,20,30,.16),0 8px 20px rgba(10,20,30,.10);
+  /* v1.39 お試し: 線の色と太さのパレット（✏️・📏 の間だけ）。つまみ #edge（z 25）より上。
+     v1.40 右手は左上（ツールバー（左 10px・幅 60px）の右隣・太さが左・色は左のパレットの順）、左手は右上（v1.39 のまま・色が左）。
+     部品の並びは 1 つ（色・区切り・太さ）で、direction だけで鏡写しにする。帯は灰色の半透明（白い箱は存在感が強かった）。
+     大きさは ☰ ＞ 設定（無印＝小 28 px・.qs2＝中 34 px・.qs3＝大 42 px＝v1.39）。
+     入れ子の flex にしない（箱の幅を中身から決めるのに頼らない・v1.36 / v1.39 と同じ作法） */
+  #qpal{position:fixed;z-index:26;top:calc(60px + var(--safe-t));left:calc(78px + var(--safe-l) + var(--planL));
+    display:none;padding:4px 5px;border-radius:12px;white-space:nowrap;font-size:0;line-height:0;direction:rtl;
+    background:rgba(118,126,136,.26);border:1px solid rgba(255,255,255,.28);
+    backdrop-filter:blur(12px) saturate(1.2);-webkit-backdrop-filter:blur(12px) saturate(1.2);
+    box-shadow:0 1px 4px rgba(10,20,30,.10);
     max-width:calc(100vw - var(--planL) - var(--planR) - 96px);overflow-x:auto;}
-  body.qpalOn #qpal{display:block;}   /* 入れ子の flex にしない（箱の幅を中身から決めるのに頼らない・v1.36 と同じ作法） */
-  body.lefty #qpal{right:calc(78px + var(--safe-r) + var(--planR));}
+  body.qpalOn #qpal{display:block;}
+  body.lefty #qpal{left:auto;right:calc(78px + var(--safe-r) + var(--planR));direction:ltr;}
   #qpalCol,#qpalLw{display:inline-block;vertical-align:middle;}
-  #qpalCol{direction:rtl;}   /* 左のパレットの最初の色がいちばん右（利用者の見本どおり） */
-  .qpSep{display:inline-block;vertical-align:middle;width:1px;height:34px;margin:0 7px;background:rgba(23,32,42,.22);}
-  #qpal .qpCol,#qpal .qpLw{width:42px;height:42px;min-height:42px;padding:0;border-radius:11px;border:none;outline:none;
-    background:rgba(23,32,42,.07);display:inline-block;vertical-align:middle;margin:0 2.5px;direction:ltr;}
+  #qpalCol{direction:ltr;}               /* 右手: 左のパレットの順に左から */
+  body.lefty #qpalCol{direction:rtl;}    /* 左手: 最初の色がいちばん右（v1.39 の見本どおり） */
+  .qpSep{display:inline-block;vertical-align:middle;width:1px;height:20px;margin:0 5px;background:rgba(23,32,42,.28);}
+  #qpal .qpCol,#qpal .qpLw{width:28px;height:28px;min-height:28px;padding:0;border-radius:8px;border:none;outline:none;
+    background:rgba(255,255,255,.38);display:inline-block;vertical-align:middle;margin:0 2px;direction:ltr;}
   #qpal .qpLw{border-radius:50%;}
-  #qpal .qpCol i{display:block;width:30px;height:30px;margin:6px;border-radius:6px;}
-  #qpal .qpLw i{display:flex;align-items:center;justify-content:center;width:32px;height:32px;margin:5px;border-radius:50%;}
-  #qpal .qpLw b{display:block;width:26px;border-radius:9px;background:#111;}
+  #qpal .qpCol i{display:block;width:20px;height:20px;margin:4px;border-radius:5px;}
+  #qpal .qpLw i{display:block;width:22px;height:22px;margin:3px;}
+  #qpal .qpLw svg{display:block;width:100%;height:100%;}
   #qpal .qpCol.sel,#qpal .qpLw.sel{background:#f6b500;}
+  #qpal .qpCol.sel i{box-shadow:0 0 0 2px #fff;}   /* 黄・橙の色を選んでも、黄色の縁取りに溶けない */
+  #qpal.qs2{padding:5px 6px;border-radius:14px;}
+  #qpal.qs2 .qpSep{height:26px;margin:0 6px;}
+  #qpal.qs2 .qpCol,#qpal.qs2 .qpLw{width:34px;height:34px;min-height:34px;}
+  #qpal.qs2 .qpCol{border-radius:9px;}
+  #qpal.qs2 .qpCol i{width:25px;height:25px;margin:4.5px;border-radius:6px;}
+  #qpal.qs2 .qpLw i{width:27px;height:27px;margin:3.5px;}
+  #qpal.qs3{padding:6px 8px;border-radius:16px;}
+  #qpal.qs3 .qpSep{height:34px;margin:0 7px;}
+  #qpal.qs3 .qpCol,#qpal.qs3 .qpLw{width:42px;height:42px;min-height:42px;margin:0 2.5px;}
+  #qpal.qs3 .qpCol{border-radius:11px;}
+  #qpal.qs3 .qpCol i{width:30px;height:30px;margin:6px;border-radius:6px;}
+  #qpal.qs3 .qpLw i{width:32px;height:32px;margin:5px;}
   /* v1.20 分割ビューを開いている間だけ、平面図の領域を狭める。
      横持ちは断面が右（左手モードは左）、縦持ちは下。閉じれば 0 に戻る。 */
   body.sfside{--planR:var(--sfW);}
@@ -901,14 +918,15 @@
   <button class="tbtn" id="tPan" title="移動（地図をドラッグ）" aria-label="移動"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v17M3.5 12h17"/><path d="M12 3.5l-2.4 2.6M12 3.5l2.4 2.6M12 20.5l-2.4-2.6M12 20.5l2.4-2.6M3.5 12l2.6-2.4M3.5 12l2.6 2.4M20.5 12l-2.6-2.4M20.5 12l-2.6 2.4"/></svg></button>
   <div class="swatches" id="swatches"></div>
 </div>
-<!-- v1.39 お試し: ✏️・📏 のあいだ右上に出す線の色と太さ（不評なら JS の QPAL_ON を false に） -->
+<!-- v1.39 お試し: ✏️・📏 のあいだ出す線の色と太さ（☰ ＞ 設定で 表示・大きさ。JS の QPAL_ON を false にすれば必ず消える）
+     v1.40 右手は左上・左手は右上（CSS の direction で鏡写し）。太さの丸の中は JS が SVG で描く（白い丸にいまの色の線） -->
 <div id="qpal" role="toolbar" aria-label="線の色と太さ">
   <div id="qpalCol"></div><span class="qpSep"></span>
   <div id="qpalLw">
-    <button class="qpLw" data-qlw="2.2" type="button" title="極太" aria-label="極太"><i><b style="height:16px"></b></i></button>
-    <button class="qpLw" data-qlw="1.5" type="button" title="太" aria-label="太"><i><b style="height:11px"></b></i></button>
-    <button class="qpLw" data-qlw="1" type="button" title="標準" aria-label="標準"><i><b style="height:7px"></b></i></button>
-    <button class="qpLw" data-qlw="0.6" type="button" title="細" aria-label="細"><i><b style="height:4px"></b></i></button>
+    <button class="qpLw" data-qlw="2.2" data-nm="極太" type="button" title="極太" aria-label="極太"><i></i></button>
+    <button class="qpLw" data-qlw="1.5" data-nm="太" type="button" title="太" aria-label="太"><i></i></button>
+    <button class="qpLw" data-qlw="1" data-nm="標準" type="button" title="標準" aria-label="標準"><i></i></button>
+    <button class="qpLw" data-qlw="0.6" data-nm="細" type="button" title="細" aria-label="細"><i></i></button>
   </div>
 </div>
 
@@ -1029,6 +1047,16 @@
     <div class="frowD"><label>ペンを持つ手</label>
       <button id="btnLefty" class="ghost" style="flex:0 0 auto;">右手</button></div>
     <div class="muted2">左手にすると、ツールバーを右側に置き（左手が当たって押してしまうのを防ぐ）、横持ちのすべり面断面を左側に出します。記入欄・メニューは右手と同じです。この設定はこの端末に覚え、プロジェクト（.json）には入れません。</div>
+    <div class="dSec">線のパレット（お試し）</div>
+    <div class="frowD"><label>✏️・📏 のときに出す</label>
+      <button id="btnQpal" class="primary" type="button" style="flex:0 0 auto;">表示する</button></div>
+    <div class="frowD"><label>大きさ</label>
+      <span class="szBox" style="flex:0 0 auto;">
+        <button class="szBtn qpSzBtn on" data-qps="1" type="button" style="min-width:44px;">小</button>
+        <button class="szBtn qpSzBtn" data-qps="2" type="button" style="min-width:44px;">中</button>
+        <button class="szBtn qpSzBtn" data-qps="3" type="button" style="min-width:44px;">大</button>
+      </span></div>
+    <div class="muted2">✏️（フリーハンド）と 📏（折れ線）を選んでいる間、ツールバーの隣に線の色と太さのボタンを出します。選んでいる太さのボタンをもう一度押すと、点線 → 両髭線 → 実線 と線種が変わります。この設定はこの端末に覚え、プロジェクト（.json）には入れません。</div>
     <div class="dSec">外部 GPS</div>
     <div class="muted2" id="xgpsStat">まだ受信していません</div>
     <div class="muted2">AtomS3R に ATOMIC GPS ベースを付け、同梱のファーム（AtomS3R_ClinoGPS）を書き込むと、📍 の現在地に外部 GPS を使います。10 秒途絶えると内蔵の GPS に戻ります。「破棄」が増えるときは、ファームの KEY_GAP_MS を大きくしてください。位置はこの場の表示だけで、プロジェクトには保存しません。</div>
@@ -2739,7 +2767,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.39';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.40';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -7241,26 +7269,70 @@
       var v=parseFloat(b.getAttribute('data-lw'))||1;
       lsApply({lwm:(Math.abs(v-1)<0.01)?undefined:v}); syncLwBtns(); render();
       if(T3&&T3.open) refreshTextureSoon(60); }; });
-  // ---- v1.39 お試し: 線の色と太さのパレット（✏️・📏 を選んでいる間、右上に出す） ----
-  // 不評なら QPAL_ON を false にすれば出なくなる（ほかの部品は変えていない）。
+  // ---- v1.39 お試し: 線の色と太さのパレット（✏️・📏 を選んでいる間、ツールバーの隣に出す） ----
+  // QPAL_ON を false にすれば設定に関係なく出なくなる（お試しをやめるときの 1 か所）。
   // 色は線のシートの色と同じ setLineColor（次に描く線の色・左のパレットと同じ）、太さは線のシートと同じ lsApply（ツールごとに覚える）。
   // どちらもツールの既定だけを変える（✥ でタップした線の編集は線のシートで）。
-  var QPAL_ON=true;
-  function qpalShow(){ return QPAL_ON&&(S.tool==='pen'||S.tool==='line'); }
-  function qpalSync(){ var q=document.getElementById('qpal'); if(!q) return;
+  // v1.40 表示／非表示と大きさ（1 小・2 中・3 大）は ☰ ＞ 設定。端末に覚える（既定は表示・小。既定のときは何も書かない）。
+  //   太さの丸は白地にいまの色の線（SVG）。選んでいる太さの丸だけ、いまの線種で描く。
+  //   選んでいる太さをもう一度押すと 点線 → 両髭線 → 実線 → 点線（QPAL_KIND_NEXT）。
+  //   QP は起動の途中（buildSwatches が先に qpalSync を呼ぶ）でまだ無いことがある → 無ければ何もしない。
+  var QPAL_ON=true, QPAL_KEY='ts.qpal', QPAL_SZ_KEY='ts.qpalSize', QP={on:true,size:1};
+  var QPAL_KIND_NEXT={'1':'2','2':'0','0':'1'}, QPAL_KIND_NAME={'0':'実線','1':'点線','2':'両髭線'};
+  function qpalLoad(){ try{ QP.on=localStorage.getItem(QPAL_KEY)!=='0';
+      var z=parseInt(localStorage.getItem(QPAL_SZ_KEY),10); QP.size=(z===2||z===3)?z:1; }catch(e){ QP.on=true; QP.size=1; } }
+  function qpalSave(){ try{ if(QP.on) localStorage.removeItem(QPAL_KEY); else localStorage.setItem(QPAL_KEY,'0');
+      if(QP.size===1) localStorage.removeItem(QPAL_SZ_KEY); else localStorage.setItem(QPAL_SZ_KEY,String(QP.size)); }catch(e){} }
+  function qpalShow(){ return !!(QPAL_ON&&QP&&QP.on&&(S.tool==='pen'||S.tool==='line')); }
+  function qpalKindOf(o){ return (o&&o.tick)?'2':((o&&o.dash)?'1':'0'); }
+  // 明るさ（0 黒〜1 白）。白い丸の上で見えにくい色（黄など）に濃い縁を敷くかの判定
+  function qpalLum(hex){ var m=/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex||'')); if(!m) return 0;
+    var c=[m[1],m[2],m[3]].map(function(h){ var v=parseInt(h,16)/255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+    return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; }
+  // 太さのボタンの中身（32 × 32 の SVG）。白い丸・いまの色の線。kind が '1' なら点線、'2' なら両髭線、それ以外は実線
+  function qpalLwSvg(v,col,kind){ var w=(v>=2)?7:((v>=1.4)?5:((v>=0.9)?3.4:2)), halo=qpalLum(col)>0.4, out=[], k;
+    function qpalSegLn(x1,y1,x2,y2,sw,dash,cap){ var a=' x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke-linecap="'+cap+'"'+(dash?' stroke-dasharray="'+dash+'"':'');
+      if(halo) out.push('<line'+a+' stroke="rgba(23,32,42,.55)" stroke-width="'+(sw+1.6)+'"/>');
+      out.push('<line'+a+' stroke="'+col+'" stroke-width="'+sw+'"/>'); }
+    out.push('<circle cx="16" cy="16" r="15" fill="#fff" stroke="rgba(23,32,42,.22)" stroke-width="1"/>');
+    if(kind==='1') qpalSegLn(5,16,27,16,w,(Math.max(3,w*1.15)).toFixed(1)+' '+(Math.max(2.4,w*0.85)).toFixed(1),'butt');
+    else { qpalSegLn(6,16,26,16,w,'','round');
+      if(kind==='2') for(k=10;k<=22;k+=6) qpalSegLn(k,16-w/2-3.5,k,16+w/2+3.5,1.6,'','round'); }
+    return '<svg viewBox="0 0 32 32" aria-hidden="true">'+out.join('')+'</svg>'; }
+  // 線種を k（'0' 実線・'1' 点線・'2' 両髭線）にする。線のシートの線種ボタン（.dsBtn）と同じ値を入れる
+  function qpalKind(k){ var r=lsRef(), kv={dash:(k==='1'),tick:(k==='2')};
+    if(k==='2'){ kv.tickP=(r.tickP>0?r.tickP:(S.tickP||TICK_P)); kv.tickL=(r.tickL>0?r.tickL:(S.tickL||TICK_L)); }
+    if(k==='1'&&!(r.dashM>0)) kv.dashM=(S.dashM||DASH_M);
+    lsApply(kv); }
+  function qpalSync(){ var q=document.getElementById('qpal'); if(!q||!QP) return;
     document.body.classList.toggle('qpalOn',qpalShow());
-    var box=document.getElementById('qpalCol'), L=LAYERS[S.layer]||LAYERS[0], cur=lwmOf(S);
+    q.className=(QP.size===2||QP.size===3)?('qs'+QP.size):'';
+    var box=document.getElementById('qpalCol'), L=LAYERS[S.layer]||LAYERS[0], cur=lwmOf(S), kind=qpalKindOf(S);
     if(box){ box.innerHTML='';
       palNorm().forEach(function(li){ var Lc=LAYERS[li]; if(!Lc) return; var b=document.createElement('button');
         b.type='button'; b.className='qpCol'+(li===S.layer?' sel':''); b.title=Lc.name; b.setAttribute('aria-label',Lc.name);
         b.setAttribute('data-li',li); var ic=document.createElement('i'); ic.style.background=Lc.color; b.appendChild(ic);
         b.onclick=function(){ LSX=null; setLineColor(li); }; box.appendChild(b); }); }
     [].forEach.call(document.querySelectorAll('.qpLw'),function(b){
-      b.classList.toggle('sel',Math.abs(parseFloat(b.getAttribute('data-qlw'))-cur)<0.01);
-      var ic=b.querySelector('i'); if(ic&&L) ic.style.background=L.color; }); }
+      var v=parseFloat(b.getAttribute('data-qlw'))||1, on=Math.abs(v-cur)<0.01, nm=b.getAttribute('data-nm')||'';
+      b.classList.toggle('sel',on);
+      var ic=b.querySelector('i'); if(ic&&L) ic.innerHTML=qpalLwSvg(v,L.color,on?kind:'0');
+      var lb=on?(nm+'・'+QPAL_KIND_NAME[kind]+'（もう一度押すと '+QPAL_KIND_NAME[QPAL_KIND_NEXT[kind]]+'）'):nm;
+      b.title=lb; b.setAttribute('aria-label',lb); }); }
   [].forEach.call(document.querySelectorAll('.qpLw'),function(b){ b.onclick=function(){
       var v=parseFloat(b.getAttribute('data-qlw'))||1; LSX=null;
-      lsApply({lwm:(Math.abs(v-1)<0.01)?undefined:v}); syncLwBtns(); qpalSync(); render(); }; });
+      if(Math.abs(v-lwmOf(S))<0.01){ var k=QPAL_KIND_NEXT[qpalKindOf(S)]||'1'; qpalKind(k); toast('線種: '+QPAL_KIND_NAME[k]); }   // v1.40 選んでいる太さ → 線種を回す
+      else lsApply({lwm:(Math.abs(v-1)<0.01)?undefined:v});
+      syncLwBtns(); qpalSync(); render(); }; });
+  // v1.40 ☰ ＞ 設定 の「線のパレット」
+  function syncQpalSet(){ var b=document.getElementById('btnQpal');
+    if(b){ b.textContent=QP.on?'表示する':'表示しない'; b.className=QP.on?'primary':'ghost'; b.style.flex='0 0 auto'; }
+    [].forEach.call(document.querySelectorAll('.qpSzBtn'),function(x){ x.classList.toggle('on',(parseInt(x.getAttribute('data-qps'),10)||1)===QP.size); }); }
+  (function(){ var b=document.getElementById('btnQpal'); if(b) b.onclick=function(){ QP.on=!QP.on; qpalSave(); syncQpalSet(); qpalSync();
+      toast(QP.on?'線のパレット: ✏️・📏 のときに出します':'線のパレット: 出しません'); }; })();
+  [].forEach.call(document.querySelectorAll('.qpSzBtn'),function(x){ x.onclick=function(){
+      QP.size=parseInt(x.getAttribute('data-qps'),10)||1; qpalSave(); syncQpalSet(); qpalSync(); }; });
+  qpalLoad(); syncQpalSet(); qpalSync();
   // v1.22 画面全体の太さ（従来の S.lwf）。☰ ＞ 設定 へ移した。画面の表示だけで出力には効かない。
   function syncLwfBtns(){ [].forEach.call(document.querySelectorAll('.lwfBtn'),function(b){
       b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-lwf'))-(S.lwf||1.7))<0.01); }); }
