@@ -456,6 +456,41 @@
     box-shadow:inset 0 2px 0 var(--accent);}
   .dTabs button:active{transform:none;}
   .dPane{display:none;}
+  /* v1.36 入出力タブ */
+  /* v1.37 3 項目の箱（枠つき・項目名を大きく・色の帯で区別） */
+  .ioBox{border:1px solid #3a4653;border-radius:14px;padding:10px 10px 12px;margin-top:12px;background:rgba(255,255,255,.025);border-left-width:5px;}
+  .ioBoxIn{border-left-color:#4f8cff;} .ioBoxSave{border-left-color:#f5a524;} .ioBoxOut{border-left-color:#22a35a;}
+  .ioH{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:800;color:#fff;letter-spacing:.04em;margin:0 2px 8px;}
+  .ioHi{font-size:18px;}
+  .ioBox .ioBtn{margin-top:8px;} .ioBox .ioH+.ioBtn{margin-top:0;}
+  .ioExt{display:inline-block;margin-left:8px;vertical-align:1px;font-size:11px;font-weight:600;color:var(--muted);border:1px solid #46505c;border-radius:6px;padding:0 5px;}
+  #paneOut .ioMemo .ioExt{color:#e8fff1;border-color:#9fdcb8;}
+  .ioBox .ioChk{margin:8px 2px 0;}
+  .ioFoot{font-size:11.5px;color:var(--muted);line-height:1.5;padding:10px 4px 4px;}
+  .ioSec{margin-top:16px;font-size:12px;letter-spacing:.04em;color:#c7d0da;font-weight:700;border-bottom:1px solid var(--line);}
+  .ioList{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+  /* ボタンの中は flex を使わず block で組む（ボタンの中の flex は環境によって 2 行目がはみ出して下と重なった・描いて確認） */
+  .ioBtn{display:block;text-align:left;width:100%;min-height:58px;height:auto;padding:9px 12px;box-sizing:border-box;}
+  .ioBtn .ioT{display:block;font-weight:700;font-size:14px;line-height:1.35;color:var(--txt);}
+  .ioBtn .ioD{display:block;margin-top:3px;font-size:11.5px;line-height:1.45;color:var(--muted);font-weight:400;white-space:normal;}
+  .ioBtn .ioD b{color:var(--txt);font-weight:700;}
+  .ioRec{border-color:var(--accent);}
+  /* v1.38 押せるボタンに見せる: 明るい枠・上下のグラデーション・下の影・右端の「›」・押すと沈む */
+  #paneOut .ioBtn{position:relative;padding-right:36px;border:1.5px solid #5d6b7b;
+    background:linear-gradient(180deg,#2c3641 0%,#232b34 100%);box-shadow:0 2px 0 rgba(0,0,0,.5),0 4px 10px rgba(0,0,0,.28);}
+  #paneOut .ioBtn::after{content:'›';position:absolute;right:13px;top:50%;margin-top:-14px;font-size:24px;line-height:28px;font-weight:700;color:#9fb0c2;}
+  #paneOut .ioBtn:active{transform:translateY(2px);box-shadow:0 0 0 rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.3);}
+  #paneOut .ioMemo::after{color:#fff;}
+  #paneOut .ioMemo{box-shadow:0 2px 0 #0a4f29,0 4px 10px rgba(0,0,0,.28)!important;}
+  /* v1.38 すべて消去…（消しゴムの設定）は赤く（取り消せない操作だと分かるように） */
+  #eraSheet #eraClearAll{background:#c8333b!important;color:#fff!important;border:1px solid #ff9aa0!important;font-weight:800;}
+  .ioTag{display:inline-block;margin-left:8px;vertical-align:1px;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;background:var(--accent);color:#241a06;}
+  #paneOut .ioMemo{background:#107c41!important;border:1px solid #9fdcb8!important;}
+  #paneOut .ioMemo .ioT,#paneOut .ioMemo .ioD,#paneOut .ioMemo .ioD b{color:#fff;}
+  .ioBtn.danger .ioT{color:#ff9aa0;} .ioBtn.danger .ioD{color:#d9a0a4;}
+  .ioDangerSec{color:#ff9aa0;margin-top:22px;}
+  .ioChk{display:flex;align-items:center;gap:8px;margin:0 2px;font-size:13px;line-height:1.35;}
+  .ioChk input{width:22px;height:22px;accent-color:#f5a524;flex:0 0 22px;}
   .dPane.sel{display:block;}
   .dPane>.dSec:first-child{margin-top:2px;}
   .dSec{margin-top:12px;font-size:11px;letter-spacing:.12em;color:var(--muted);padding:6px 4px;}
@@ -915,7 +950,7 @@
   <div class="dTabs" role="tablist">
     <button id="dtabLayers" class="sel" data-pane="paneLayers" role="tab" aria-selected="true"><span class="ic">🗂</span>レイヤー</button>
     <button id="dtabSet" data-pane="paneSet" role="tab" aria-selected="false"><span class="ic">⚙️</span>設定</button>
-    <button id="dtabOut" data-pane="paneOut" role="tab" aria-selected="false"><span class="ic">⬇</span>出力</button>
+    <button id="dtabOut" data-pane="paneOut" role="tab" aria-selected="false"><span class="ic">⇅</span>入出力</button>
   </div>
   <div class="dBody">
     <div class="dPane sel" id="paneLayers" role="tabpanel">
@@ -972,21 +1007,27 @@
     </div>
 
     <div class="dPane" id="paneOut" role="tabpanel">
-    <div class="dSec">書き出し / 取り込み</div>
-    <div class="dBtns">
-      <button id="btnMemoPdfOut" class="ghost">メモを PDF で書き出す（A3・全ページ）</button>
-      <button id="btnDxf" class="primary">⬇ DXF書き出し</button>
-      <button id="btnZip" class="primary">📦 一括書き出し(ZIP)</button>
-      <button id="btnGeoPdf">🗺 GeoPDF書き出し</button>
-      <button id="btnBundle">🗄 バンドル書き出し(.zip)</button>
-      <button id="btnSave">📤 プロジェクト書き出し(.json)</button>
-      <button id="btnLoad">📁 取り込み（.json / バンドル.zip）</button>
-      <button id="btnClearAll" class="danger">🗑 作図を全消去</button>
-    </div>
-    <label class="dChk" style="display:flex;align-items:center;gap:8px;margin:8px 2px 0;font-size:14px;line-height:1.35;">
-      <input type="checkbox" id="dxfFrameH" checked style="width:22px;height:22px;accent-color:#f5a524;flex:0 0 22px;">
-      <span>DXF・一括の文字／記号／旗揚げを<b>図枠に水平</b>で書き出す<span class="hint2">（オフ＝X軸に水平＝北が上。図枠が傾いた案件のみ効きます）</span></span></label>
-    <div class="muted2">ZIP=受け渡し一式（DXF・写真(P-###.jpg)・CSV・<b>写真台帳PDF</b>・GeoPDF+サイドカー・プロジェクト）。DXFの文字とフォルダ内ファイル名はP-###で一致します。<br><b>バンドル保存</b>=元のGeoPDF・DEM・写真・スケッチを1つのzipに同梱（<b>これを読込めば端末を替えても続きから踏査できます</b>）。スケッチは2.5秒ごとに端末内へ自動保存され、次回起動時に復元できます。GeoPDF=位置情報付きPDF — QGISやAvenza Mapsでそのまま重なり、GhContourPdfの「Geospatial PDF Reader」で作図をRhinoへ復元できます（等倍印刷で縮尺どおり）。</div>
+    <!-- v1.37 利用者の指定どおり ■読込み ■保存 ■書出し の 3 項目。項目ごとに枠をつけ、項目名を目立たせる -->
+    <section class="ioBox ioBoxIn">
+      <div class="ioH"><span class="ioHi">📥</span>読込み</div>
+      <button id="btnLoad" class="ioBtn"><span class="ioT">読込み<span class="ioExt">.zip / .json</span></span><span class="ioD">一括保存（.zip）・基図/DEM以外保存（.json）を開いて、続きから作業します</span></button>
+    </section>
+    <section class="ioBox ioBoxSave">
+      <div class="ioH"><span class="ioHi">💾</span>保存</div>
+      <button id="btnBundle" class="ioBtn"><span class="ioT">一括保存<span class="ioExt">.zip</span></span><span class="ioD"><b>基図（GeoPDF）・DEM</b>・写真・スケッチ・メモを 1 つに。別の端末でもこれだけで続きから作業できます</span></button>
+      <button id="btnSave" class="ioBtn"><span class="ioT">基図/DEM以外保存<span class="ioExt">.json</span></span><span class="ioD">スケッチ・写真・メモだけの軽いファイル。<b>基図と DEM は入らない</b>ので、開く端末にも同じ基図・DEM が要ります</span></button>
+    </section>
+    <section class="ioBox ioBoxOut">
+      <div class="ioH"><span class="ioHi">📤</span>書出し</div>
+      <button id="btnZip" class="ioBtn"><span class="ioT">一括書出し<span class="ioExt">.zip</span></span><span class="ioD">DXF・GeoPDF・写真（P-###.jpg）・CSV・写真台帳 PDF・<b>メモ PDF</b>・プロジェクトを 1 つに（受け渡し一式）</span></button>
+      <button id="btnDxf" class="ioBtn"><span class="ioT">DXF書出し<span class="ioExt">.dxf</span></span><span class="ioD">CAD 用（AutoCAD・Rhino・Jw_cad など・線の太さつき）</span></button>
+      <label class="dChk ioChk">
+        <input type="checkbox" id="dxfFrameH" checked>
+        <span>DXF・一括の文字／記号／旗揚げを<b>図枠に水平</b>で書き出す<span class="hint2">（オフ＝北が上。図枠が傾いた案件のみ効きます）</span></span></label>
+      <button id="btnGeoPdf" class="ioBtn"><span class="ioT">PDF書出し<span class="ioExt">GeoPDF</span></span><span class="ioD">位置情報付き PDF。QGIS・Avenza Maps でそのまま重なり、等倍印刷で縮尺どおり</span></button>
+      <button id="btnMemoPdfOut" class="ioBtn ioMemo"><span class="ioT">メモ書出し<span class="ioExt">.pdf</span></span><span class="ioD">メモを PDF に（A3 横・全ページ）</span></button>
+    </section>
+    <div class="ioFoot">作図の全消去は、消しゴムの設定（🧽 をもう一度タップ／長押し）の「すべて消去…」にあります。</div>
     </div>
   </div>
 </div>
@@ -1297,7 +1338,7 @@
     「部分削除」は**線を円の縁でちょうど切ります**（文字・記号・写真・旗揚げ・寸法は切れないので、
     触れるとまるごと消えます）。半径は画面上の px なので、拡大しても手触りは同じです。
     ↩ で 1 回で元に戻せます。</div>
-  <button class="ghost" id="eraClearAll">すべて消去…</button>
+  <button class="danger" id="eraClearAll">すべて消去…</button>
   <button class="ghost" id="eraSheetClose">閉じる</button>
 </div></div>
 
@@ -2668,7 +2709,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.35';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.38';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5757,10 +5798,13 @@
   function memoMove(d){ var j=MEMO.cur+d; if(j<0||j>=MEMO.pages.length) return;
     memoStash(); var a=MEMO.pages[MEMO.cur]; MEMO.pages[MEMO.cur]=MEMO.pages[j]; MEMO.pages[j]=a; MEMO.cur=j; memoBarSync(); }
   // v1.25 削除は自前の確認ポップアップを出してから（confirm() は利用者の環境で出なかった）
-  function memoDelAsk(){ var pg=MEMO.pages[MEMO.cur];
-    document.getElementById('memoAskMsg').textContent='「'+pg.name+'」を削除しますか？';
+  // v1.36 確認のポップアップを共用にする（confirm() は利用者の環境で出なかった）。fn は「はい」のときだけ呼ぶ。
+  var ASK_FN=null;
+  function tsAsk(msg,yes,fn){ document.getElementById('memoAskMsg').textContent=msg;
+    document.getElementById('maYes').textContent=yes||'削除する'; ASK_FN=fn||null;
     document.getElementById('memoAsk').classList.add('open'); }
-  function memoAskClose(){ document.getElementById('memoAsk').classList.remove('open'); }
+  function memoDelAsk(){ var pg=MEMO.pages[MEMO.cur]; tsAsk('「'+pg.name+'」を削除しますか？','削除する',memoDel); }
+  function memoAskClose(){ document.getElementById('memoAsk').classList.remove('open'); if(typeof ASK_FN!=='undefined') ASK_FN=null; }
   function memoDel(){ var pg=MEMO.pages[MEMO.cur]; if(typeof memoAskClose==='function') memoAskClose();
     if(MEMO.pages.length===1){ MEMO.pages=[memoNewPage()]; MEMO.cur=0; }
     else { MEMO.pages.splice(MEMO.cur,1); if(MEMO.cur>=MEMO.pages.length) MEMO.cur=MEMO.pages.length-1; }
@@ -5811,12 +5855,17 @@
     add(s);
     var out=new Uint8Array(len), at=0; for(i=0;i<parts.length;i++){ out.set(parts[i],at); at+=parts[i].length; }
     return out; }
+  // v1.37 メモの PDF のバイト列（メモ書出しと一括書出しで共用）
+  function memoPdfBytes(){ var pxW=Math.round(MEMO_W/25.4*MEMO_DPI), pxH=Math.round(MEMO_H/25.4*MEMO_DPI), pages=[], i;
+    for(i=0;i<MEMO.pages.length;i++) pages.push({jpg:memoRenderPage(i,pxW,pxH),w:pxW,h:pxH});
+    return memoPdfBuild(pages); }
+  // v1.37 メモに何か描いてあるか（一括書出しに入れるかどうか）
+  function memoHasContent(){ return MEMO.pages.some(function(pg){
+      return ['strokes','texts','leaders','symbols','photos','dims','hatches'].some(function(k){ return pg[k]&&pg[k].length; }); }); }
   function memoPdf(){ if(!MEMO.pages.length){ toast('メモの用紙がまだありません（メモのボタンで作れます）',true); return; }
-    var pxW=Math.round(MEMO_W/25.4*MEMO_DPI), pxH=Math.round(MEMO_H/25.4*MEMO_DPI);
     showLoad('メモを PDF にしています…');
     setTimeout(function(){ try{
-        var pages=[], i; for(i=0;i<MEMO.pages.length;i++) pages.push({jpg:memoRenderPage(i,pxW,pxH),w:pxW,h:pxH});
-        var bytes=memoPdfBuild(pages);
+        var pages=MEMO.pages, bytes=memoPdfBytes();
         shareOrDownloadBlob(fname('pdf').replace(/[.]pdf$/,'_メモ.pdf'),new Blob([bytes],{type:'application/pdf'}));
         toast('メモを PDF にしました（A3 横・'+pages.length+' ページ）');
       } catch(e){ toast('メモの PDF を作れませんでした: '+(e&&e.message||e),true); }
@@ -5852,7 +5901,7 @@
   document.getElementById('mmRight').onclick=function(){ memoMove(1); };
   document.getElementById('mmDel').onclick=memoDelAsk;
   document.getElementById('mmClose').onclick=memoMenuClose;
-  document.getElementById('maYes').onclick=memoDel;
+  document.getElementById('maYes').onclick=function(){ var f=ASK_FN; ASK_FN=null; memoAskClose(); if(f) f(); };   // v1.36 共用
   document.getElementById('maNo').onclick=memoAskClose;
   // v1.25 枠の外（暗い地）をタップしたら閉じる
   [['memoMenu',memoMenuClose],['memoAsk',memoAskClose],['memoSet',memoSetClose]].forEach(function(p){
@@ -8333,6 +8382,8 @@
           entries.push({name:'routemap.pdf',data:gp.pdf});
           entries.push({name:'routemap.geo.json',data:strU8(gp.sidecar)}); } }catch(eg){}
         entries.push({name:'project.json',data:strU8(JSON.stringify(buildProject()))});
+        // v1.37 メモに何か描いてあればメモの PDF も入れる（利用者要望）
+        try{ if(typeof memoHasContent==='function'&&memoHasContent()) entries.push({name:'memo.pdf',data:memoPdfBytes()}); }catch(em){}
       }catch(e){ hideLoad(); toast('ZIP作成エラー: '+e.message,true); return; }
       makePhotoAlbum().then(function(alb){
         if(alb) entries.push({name:'photo_album.pdf',data:alb});
@@ -9457,15 +9508,17 @@
     toast(v?('名前を変更しました：'+v):'名前を消しました（無題のプロジェクト）'); }
   document.getElementById('projName').onclick=renameProject;
   document.getElementById('btnLoad').onclick=function(){ document.getElementById('file').click(); };
-  document.getElementById('btnClearAll').onclick=function(){ if(!anyDrawing())return;
-    clearAllSketch(); };
+  // v1.37 入出力タブから外した（消しゴムの設定の「すべて消去…」に任せる）。ボタンが無くても落ちないように
+  (function(){ var b=document.getElementById('btnClearAll'); if(b) b.onclick=function(){ if(!anyDrawing())return; clearAllSketch(); }; })();
   // v0.46: 消しゴムの設定シートからも呼べるように関数にした
-  function clearAllSketch(){
-    if(confirm('線・文字・旗揚げ・記号・写真をすべて消去しますか？（背景地図は残ります）')){
+  // v1.36 確認は自前のポップアップ（tsAsk）で。confirm() は利用者の環境で出なかった（v1.25 の用紙の削除と同じ）。
+  function clearAllSketch(){ var msg='線・文字・旗揚げ・記号・写真をすべて消去しますか？（背景地図とメモは残ります）';
+    if(typeof tsAsk==='function') tsAsk(msg,'消去する',clearAllNow); else if(confirm(msg)) clearAllNow(); }
+  function clearAllNow(){
       if(MEMO.on) memoLeave(true);   // v1.23 消すのはスケッチ（メモ用紙は残す）
       S.strokes=[];S.texts=[];S.leaders=[];S.symbols=[];S.photos=[];S.dims=[];S.hatches=[];
       S.hist=[];S.rhist=[]; render(); rebuildDrawer();
-      flushAutosave(); } }   // v0.54: 消した状態を保存する（次の起動で戻ってこない）
+      flushAutosave(); }   // v0.54: 消した状態を保存する（次の起動で戻ってこない）
   function applyProjectSketch(o){
     if(MEMO.on) memoLeave(true);   // v1.23 読み込みはスケッチに戻ってから
     memoLoadSaved(o.memo);
