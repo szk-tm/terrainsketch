@@ -429,6 +429,26 @@
      左手ではつまみをツールバーの下（z 19）に沈める。ツールバーの上下の外では従来どおり引ける。 */
   body.lefty #tools{left:auto;right:calc(10px + var(--safe-r));}
   body.lefty #edge{z-index:19;}
+  /* v1.39 お試し: 線の色と太さのパレット（✏️・📏 の間だけ・右上）。平面図の見えている領域の右上に寄せる（--planR）。
+     左手モードはツールバー（右 10px・幅 60px）の左隣。つまみ #edge（z 25）より上に置き、押した指を取られないようにする */
+  #qpal{position:fixed;z-index:26;top:calc(60px + var(--safe-t));right:calc(10px + var(--safe-r) + var(--planR));
+    display:none;padding:6px 8px;border-radius:16px;white-space:nowrap;font-size:0;line-height:0;
+    background:rgba(255,255,255,.80);border:1px solid rgba(255,255,255,.6);
+    backdrop-filter:blur(var(--chipBlur)) saturate(1.45);-webkit-backdrop-filter:blur(var(--chipBlur)) saturate(1.45);
+    box-shadow:0 1px 3px rgba(10,20,30,.16),0 8px 20px rgba(10,20,30,.10);
+    max-width:calc(100vw - var(--planL) - var(--planR) - 96px);overflow-x:auto;}
+  body.qpalOn #qpal{display:block;}   /* 入れ子の flex にしない（箱の幅を中身から決めるのに頼らない・v1.36 と同じ作法） */
+  body.lefty #qpal{right:calc(78px + var(--safe-r) + var(--planR));}
+  #qpalCol,#qpalLw{display:inline-block;vertical-align:middle;}
+  #qpalCol{direction:rtl;}   /* 左のパレットの最初の色がいちばん右（利用者の見本どおり） */
+  .qpSep{display:inline-block;vertical-align:middle;width:1px;height:34px;margin:0 7px;background:rgba(23,32,42,.22);}
+  #qpal .qpCol,#qpal .qpLw{width:42px;height:42px;min-height:42px;padding:0;border-radius:11px;border:none;outline:none;
+    background:rgba(23,32,42,.07);display:inline-block;vertical-align:middle;margin:0 2.5px;direction:ltr;}
+  #qpal .qpLw{border-radius:50%;}
+  #qpal .qpCol i{display:block;width:30px;height:30px;margin:6px;border-radius:6px;}
+  #qpal .qpLw i{display:flex;align-items:center;justify-content:center;width:32px;height:32px;margin:5px;border-radius:50%;}
+  #qpal .qpLw b{display:block;width:26px;border-radius:9px;background:#111;}
+  #qpal .qpCol.sel,#qpal .qpLw.sel{background:#f6b500;}
   /* v1.20 分割ビューを開いている間だけ、平面図の領域を狭める。
      横持ちは断面が右（左手モードは左）、縦持ちは下。閉じれば 0 に戻る。 */
   body.sfside{--planR:var(--sfW);}
@@ -880,6 +900,16 @@
   <button class="tbtn" id="tPhoto" title="写真ポイント（方位記録）" aria-label="写真ポイント"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="12.5" rx="2.6"/><circle cx="12" cy="13.2" r="3.4" fill="#4fa3e3"/><path d="M9 7l1.3-2.2h3.4L15 7"/></svg></button>
   <button class="tbtn" id="tPan" title="移動（地図をドラッグ）" aria-label="移動"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v17M3.5 12h17"/><path d="M12 3.5l-2.4 2.6M12 3.5l2.4 2.6M12 20.5l-2.4-2.6M12 20.5l2.4-2.6M3.5 12l2.6-2.4M3.5 12l2.6 2.4M20.5 12l-2.6-2.4M20.5 12l-2.6 2.4"/></svg></button>
   <div class="swatches" id="swatches"></div>
+</div>
+<!-- v1.39 お試し: ✏️・📏 のあいだ右上に出す線の色と太さ（不評なら JS の QPAL_ON を false に） -->
+<div id="qpal" role="toolbar" aria-label="線の色と太さ">
+  <div id="qpalCol"></div><span class="qpSep"></span>
+  <div id="qpalLw">
+    <button class="qpLw" data-qlw="2.2" type="button" title="極太" aria-label="極太"><i><b style="height:16px"></b></i></button>
+    <button class="qpLw" data-qlw="1.5" type="button" title="太" aria-label="太"><i><b style="height:11px"></b></i></button>
+    <button class="qpLw" data-qlw="1" type="button" title="標準" aria-label="標準"><i><b style="height:7px"></b></i></button>
+    <button class="qpLw" data-qlw="0.6" type="button" title="細" aria-label="細"><i><b style="height:4px"></b></i></button>
+  </div>
 </div>
 
 <div id="hud">
@@ -2709,7 +2739,7 @@
         out.push({k:'p',pts:pts,close:u[i].close}); } }
     return out; }
 
-  var APPVER='1.38';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
+  var APPVER='1.39';   // 表示・更新確認用。sw.js の VER と一致させること（build.py が検証）
   var S={
     rasters:[], strokes:[], texts:[], leaders:[], symbols:[], photos:[],
     dims:[],   // v0.45 寸法の意味（DXF の DIMENSION 用）。分解した線・文字とは別に持つ
@@ -5656,7 +5686,8 @@
     return {cx:p[0],cy:p[1],w:w,h:h,rad:(ph.mrot||0)*Math.PI/180,ok:ok}; }
   function memoLocal(g,x,y){ var dx=x-g.cx, dy=y-g.cy, c=Math.cos(g.rad), s=Math.sin(g.rad);
     return [dx*c+dy*s,-dx*s+dy*c]; }
-  var MEMO_HANDLE=22, MEMO_ROT_GAP=30;   // 四隅と回転の丸の当たり（px）・回転の丸までの距離（px）
+  // v1.39 消す × の丸（MEMO_DEL_GAP: 右上の角から斜め外へ px・MEMO_DEL_R: 半径 px・当たりは半径＋8）。同じ var 文に置く（試験がこの文を取り出す）
+  var MEMO_HANDLE=22, MEMO_ROT_GAP=30, MEMO_DEL_GAP=26, MEMO_DEL_R=13;   // 四隅と回転の丸の当たり（px）・回転の丸までの距離（px）
   function memoDrawImage(ph){ if(!ph._im){ ph._im=new Image(); ph._im.onload=function(){ render(); }; ph._im.src=ph.img; }
     var g=memoPhGeom(ph), w=g.w, h=g.h;
     ctx.save(); ctx.translate(g.cx,g.cy); ctx.rotate(g.rad);
@@ -5674,6 +5705,11 @@
     ctx.fillStyle='#fff'; ctx.lineWidth=2.5;
     [[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]].forEach(function(q){ ctx.fillRect(q[0]-8,q[1]-8,16,16); ctx.strokeRect(q[0]-8,q[1]-8,16,16); });
     ctx.beginPath(); ctx.arc(0,-h/2-MEMO_ROT_GAP,10,0,7); ctx.fill(); ctx.stroke();
+    var xx=w/2+MEMO_DEL_GAP, xy=-h/2-MEMO_DEL_GAP, xr=MEMO_DEL_R*0.42;   // v1.39 右上の × （押すと写真を消す）
+    ctx.beginPath(); ctx.arc(xx,xy,MEMO_DEL_R,0,7); ctx.fillStyle='#d1343c'; ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
+    var cr=Math.cos(g.rad), sr=Math.sin(g.rad), ax=xr*(cr+sr), ay=xr*(cr-sr);   // × の字は画面に対して立てる（写真を回しても × に見える）
+    ctx.beginPath(); ctx.moveTo(xx-ax,xy-ay); ctx.lineTo(xx+ax,xy+ay); ctx.moveTo(xx-ay,xy+ax); ctx.lineTo(xx+ay,xy-ax);
+    ctx.lineWidth=2.6; ctx.lineCap='round'; ctx.stroke();
     ctx.restore(); }
   // ---- v1.24 写真の編集（ダブルタップ／長押しで入る・外をタップで終わる） ------------------
   function memoHitPhoto(x,y){ for(var i=S.photos.length-1;i>=0;i--){ var ph=S.photos[i]; if(!ph.img) continue;
@@ -5682,6 +5718,7 @@
   function memoPhById(id){ for(var i=0;i<S.photos.length;i++) if(S.photos[i].id===id) return S.photos[i]; return null; }
   // 編集中の写真のどこを押したか: 'rot'（回転の丸）・'size'（四隅）・'move'（本体）・null（外）
   function memoHandleAt(ph,x,y){ var g=memoPhGeom(ph), l=memoLocal(g,x,y), w=g.w, h=g.h;
+    if(Math.hypot(l[0]-w/2-MEMO_DEL_GAP,l[1]+h/2+MEMO_DEL_GAP)<=MEMO_DEL_R+8) return 'del';   // v1.39 × がいちばん先
     if(Math.hypot(l[0],l[1]+h/2+MEMO_ROT_GAP)<=MEMO_HANDLE) return 'rot';
     if(Math.abs(Math.abs(l[0])-w/2)<=MEMO_HANDLE&&Math.abs(Math.abs(l[1])-h/2)<=MEMO_HANDLE) return 'size';
     if(Math.abs(l[0])<=w/2&&Math.abs(l[1])<=h/2) return 'move';
@@ -5689,6 +5726,10 @@
   var MP={op:null,pid:null,id:null,x0:0,y0:0,ph0:null,last:null,lp:0,eat:{}};
   function memoEditStart(ph){ MEMO.edit=ph.id; S.cur=null; render(); }
   function memoEditEnd(){ if(MEMO.edit==null) return; MEMO.edit=null; MP.op=null; render(); }
+  // v1.39 × で写真を消す。確認は出さない（1 回の ↩︎ で戻る）。消したら編集も終える
+  function memoPhDel(ph){ var i=S.photos.indexOf(ph); if(i<0) return;
+    S.photos.splice(i,1); pushHist({op:'del',arr:'photos',obj:ph,index:i});
+    MEMO.edit=null; MP.op=null; render(); toast('写真を消しました（↩︎ で戻せます）'); }
   function memoOpBegin(op,ph,e){ var g=memoPhGeom(ph);
     MP.op=op; MP.pid=e.pointerId; MP.id=ph.id; MP.x0=e.clientX; MP.y0=e.clientY;
     MP.ph0={x:ph.x,y:ph.y,mw:ph.mw,mrot:ph.mrot,w0:memoPhW(ph),cx:g.cx,cy:g.cy,
@@ -5720,7 +5761,7 @@
     var x=e.clientX, y=e.clientY, now=Date.now();
     if(MEMO.edit!=null){ var ph=memoPhById(MEMO.edit), h=ph?memoHandleAt(ph,x,y):null;
       memoEat(e); MP.eat[e.pointerId]=1;
-      if(h) memoOpBegin(h,ph,e); else memoEditEnd();   // 写真の外をタップしたら編集を終える
+      if(h==='del') memoPhDel(ph); else if(h) memoOpBegin(h,ph,e); else memoEditEnd();   // 写真の外をタップしたら編集を終える
       return; }
     var hit=memoHitPhoto(x,y); if(!hit){ MP.last=null; return; }
     if(MP.last&&MP.last.id===hit.id&&now-MP.last.t<350&&Math.hypot(x-MP.last.x,y-MP.last.y)<20){   // ダブルタップ
@@ -6919,7 +6960,7 @@
     S.tool0=t;
     document.getElementById('symBar').classList.toggle('show',t==='sym');
     document.getElementById('leaderBar').classList.toggle('show',t==='leader');
-    updateGpsPlace(); render(); }
+    updateGpsPlace(); qpalSync(); render(); }   // v1.39 パレットは ✏️・📏 の間だけ
   // ✏️/📏 は「選択中にもう一度タップ」で線のスタイルシートを開く（手描きアプリの標準作法。
   // ツールを増やさず、線種・間隔・太さを1箇所に集約する）。
   Object.keys(TOOLBTN).forEach(function(tk){ document.getElementById(TOOLBTN[tk]).onclick=function(){
@@ -6958,7 +6999,8 @@
       var b=document.getElementById(pr[1]); if(!b)return;
       var d=b.querySelector('.db'); if(!d)return;
       var sl=lsSlot(pr[0]); d.textContent=lsMark(sl);
-      d.setAttribute('title',pr[0]==='pen'?'ペンの線種':'折れ線の線種'); }); }
+      d.setAttribute('title',pr[0]==='pen'?'ペンの線種':'折れ線の線種'); });
+    if(typeof qpalSync==='function') qpalSync(); }   // v1.39 パレットの太さも
   // v0.92: 線をタップして編集しているときの相手（線の id）。null ならツールの既定を編集。
   var LSX=null;
   function lsTarget(){ if(LSX==null)return null;   // v0.94: id が 0 の線も掴めるように
@@ -7050,7 +7092,8 @@
     syncSwatchSel(); rebuildDrawer(); }
   function syncSwatchSel(){ [].forEach.call(swEl.children,function(c){
     var li=c.getAttribute('data-li');
-    if(li!=null) c.classList.toggle('sel',(li|0)===S.layer); }); }
+    if(li!=null) c.classList.toggle('sel',(li|0)===S.layer); });
+    if(typeof qpalSync==='function') qpalSync(); }   // v1.39 パレットの色も
   function buildSwatches(){ swEl.innerHTML='';
     palNorm().forEach(function(li){ var L=LAYERS[li];
       var d=document.createElement('div'); d.className='sw'+(li===S.layer?' sel':'');
@@ -7058,7 +7101,8 @@
       d.onclick=function(){ setLayer(li); }; swEl.appendChild(d); });
     var add=document.createElement('div'); add.className='sw add'; add.textContent='＋';
     add.title='色を追加'; add.setAttribute('aria-label','色を追加');
-    add.onclick=openColSheet; swEl.appendChild(add); }
+    add.onclick=openColSheet; swEl.appendChild(add);
+    if(typeof qpalSync==='function') qpalSync(); }   // v1.39 色を足し外ししたらパレットも
   // 図形が 1 つでもある色か（外していいかの判断に使う）
   function layerUsed(i){ return S.strokes.some(function(o){return o.layer===i;})
     ||S.texts.some(function(o){return o.layer===i;})
@@ -7197,6 +7241,26 @@
       var v=parseFloat(b.getAttribute('data-lw'))||1;
       lsApply({lwm:(Math.abs(v-1)<0.01)?undefined:v}); syncLwBtns(); render();
       if(T3&&T3.open) refreshTextureSoon(60); }; });
+  // ---- v1.39 お試し: 線の色と太さのパレット（✏️・📏 を選んでいる間、右上に出す） ----
+  // 不評なら QPAL_ON を false にすれば出なくなる（ほかの部品は変えていない）。
+  // 色は線のシートの色と同じ setLineColor（次に描く線の色・左のパレットと同じ）、太さは線のシートと同じ lsApply（ツールごとに覚える）。
+  // どちらもツールの既定だけを変える（✥ でタップした線の編集は線のシートで）。
+  var QPAL_ON=true;
+  function qpalShow(){ return QPAL_ON&&(S.tool==='pen'||S.tool==='line'); }
+  function qpalSync(){ var q=document.getElementById('qpal'); if(!q) return;
+    document.body.classList.toggle('qpalOn',qpalShow());
+    var box=document.getElementById('qpalCol'), L=LAYERS[S.layer]||LAYERS[0], cur=lwmOf(S);
+    if(box){ box.innerHTML='';
+      palNorm().forEach(function(li){ var Lc=LAYERS[li]; if(!Lc) return; var b=document.createElement('button');
+        b.type='button'; b.className='qpCol'+(li===S.layer?' sel':''); b.title=Lc.name; b.setAttribute('aria-label',Lc.name);
+        b.setAttribute('data-li',li); var ic=document.createElement('i'); ic.style.background=Lc.color; b.appendChild(ic);
+        b.onclick=function(){ LSX=null; setLineColor(li); }; box.appendChild(b); }); }
+    [].forEach.call(document.querySelectorAll('.qpLw'),function(b){
+      b.classList.toggle('sel',Math.abs(parseFloat(b.getAttribute('data-qlw'))-cur)<0.01);
+      var ic=b.querySelector('i'); if(ic&&L) ic.style.background=L.color; }); }
+  [].forEach.call(document.querySelectorAll('.qpLw'),function(b){ b.onclick=function(){
+      var v=parseFloat(b.getAttribute('data-qlw'))||1; LSX=null;
+      lsApply({lwm:(Math.abs(v-1)<0.01)?undefined:v}); syncLwBtns(); qpalSync(); render(); }; });
   // v1.22 画面全体の太さ（従来の S.lwf）。☰ ＞ 設定 へ移した。画面の表示だけで出力には効かない。
   function syncLwfBtns(){ [].forEach.call(document.querySelectorAll('.lwfBtn'),function(b){
       b.classList.toggle('on',Math.abs(parseFloat(b.getAttribute('data-lwf'))-(S.lwf||1.7))<0.01); }); }
@@ -7899,6 +7963,7 @@
         dimStyles.push({name:dimStyleOf[key],h:d.h,arrow:(+d.arrow||0.8),para:!!d.para}); }
       d._st=dimStyleOf[key]; });
     function dashLt(m){ return 'DASHED_'+String(m).replace('.','P')+'M'; }
+    function dashPat(m){ return m*1.6; }   // v1.39 模様 1 周（ダッシュ m ＋ すき間 0.6m）。LTYPE の 40 と同じ
     var dashSet={}; S.strokes.forEach(function(st){ if(st.dash)dashSet[st.dashM||DASH_M]=1; });
     var dashMs=Object.keys(dashSet).map(Number).sort(function(a,b){return a-b;});
     function rq(v){ return Math.round(v*1e6)/1e6; }
@@ -7949,7 +8014,7 @@
       +trec('LTYPE','AcDbLinetypeTableRecord')+p(2,'CONTINUOUS')+p(70,0)+p(3,'Solid line')+p(72,65)+p(73,0)+p(40,'0.0');
     dashMs.forEach(function(m){ dxf+=trec('LTYPE','AcDbLinetypeTableRecord')
       +p(2,dashLt(m))+p(70,0)+p(3,'Dashed '+m+'m __ __ __')+p(72,65)+p(73,2)
-      +p(40,rq(m*1.6))+p(49,m)+p(74,0)+p(49,rq(-m*0.6))+p(74,0); });
+      +p(40,rq(dashPat(m)))+p(49,m)+p(74,0)+p(49,rq(-m*0.6))+p(74,0); });
     dxf+=p(0,'ENDTAB');
     // LAYER
     // レイヤ "0" は AutoCAD が既定エントリとして必ず要求する（v0.35）。
@@ -8071,7 +8136,79 @@
     function lwCode(m){ var L=[5,9,13,15,18,20,25,30,35,40,50,53,60,70,80,90,100,106,120,140,158,200,211], t=35*m, best=L[0], i;
       for(i=1;i<L.length;i++) if(Math.abs(L[i]-t)<Math.abs(best-t)) best=L[i];
       return best; }
-    function wPoly(layer,P,closed,ltype,lwm){
+    // ---- v1.39 破線の SPLINE（Rhino 対策）。buildDxf の中に置く（試験は buildDxf だけを取り出して動かすので）
+    // Rhino は LWPOLYLINE の線種生成（70 の bit 128）を読まず、頂点ごとに破線の模様を先頭から描き直す。
+    // フリーハンドの線は頂点の間（3 m 前後）がダッシュ（6 m）より短いので、Rhino では実線に見えた（AutoCAD は正しい）。
+    // 短い区間が続き、なだらかに曲がる部分だけを 3 次のスプライン（全頂点を通る）にする。曲線の上なら Rhino も模様を続けて描く。
+    // 角（DXF_SPL_TURN 度以上折れる・前後の区間が模様 1 周以上）はスプラインの節を 3 重にして角のまま残す。
+    // なだらかな頂点が無ければ null（従来どおり LWPOLYLINE）。返すのは節の列 knots と制御点 ctrl（AC1018 の SPLINE の形）。
+    var DXF_SPL_TURN=30;
+    function dxfSplParts(P,closed,pat){
+      if(!(pat>0)||!P||P.length<3) return null;
+      var Q=[], i, q, z;
+      for(i=0;i<P.length;i++){ q=P[i]; z=Q[Q.length-1];
+        if(!z||Math.abs(q[0]-z[0])+Math.abs(q[1]-z[1])>1e-9) Q.push([q[0],q[1]]); }
+      if(closed&&Q.length>2&&Math.abs(Q[0][0]-Q[Q.length-1][0])+Math.abs(Q[0][1]-Q[Q.length-1][1])>1e-9) Q.push([Q[0][0],Q[0][1]]);
+      var n=Q.length; if(n<3) return null;
+      var sl=[], cum=[0];
+      for(i=0;i<n-1;i++){ sl.push(Math.hypot(Q[i+1][0]-Q[i][0],Q[i+1][1]-Q[i][1])); cum.push(cum[i]+sl[i]); }
+      var brk=[0], smooth=0, a, b, d;
+      for(i=1;i<n-1;i++){
+        a=Math.atan2(Q[i][1]-Q[i-1][1],Q[i][0]-Q[i-1][0]); b=Math.atan2(Q[i+1][1]-Q[i][1],Q[i+1][0]-Q[i][0]);
+        d=Math.abs(b-a); if(d>Math.PI) d=2*Math.PI-d;
+        if(d*180/Math.PI<DXF_SPL_TURN&&sl[i-1]<pat&&sl[i]<pat) smooth++; else brk.push(i); }
+      brk.push(n-1);
+      if(!smooth) return null;
+      var K=[0,0,0,0], R=[[Q[0][0],Q[0][1]]], k, s, e;
+      for(k=0;k+1<brk.length;k++){
+        s=dxfSplRun(Q.slice(brk[k],brk[k+1]+1),cum.slice(brk[k],brk[k+1]+1));
+        for(i=0;i<s.knots.length;i++) K.push(s.knots[i]);
+        for(i=1;i<s.ctrl.length;i++) R.push(s.ctrl[i]);
+        e=cum[brk[k+1]]; K.push(e,e,e); }
+      K.push(cum[n-1]);
+      return {knots:K,ctrl:R}; }
+    // 1 つの区切り（角から角まで）を、全部の点を通る端の固定された 3 次の B スプラインにする（Piegl & Tiller の大域補間）。
+    // T は弧長（図面全体の通しの値）。返す knots は内側の節だけ（両端の 4 重は呼ぶ側が足す）。
+    function dxfSplRun(R,T){ var m=R.length, i, j, k;
+      if(m===2){ var dx=R[1][0]-R[0][0], dy=R[1][1]-R[0][1];
+        return {knots:[],ctrl:[[R[0][0],R[0][1]],[R[0][0]+dx/3,R[0][1]+dy/3],[R[0][0]+dx*2/3,R[0][1]+dy*2/3],[R[1][0],R[1][1]]]}; }
+      if(m===3){   // 3 次は 4 点から。区間の中点を足す（中点は元の線の上にある）
+        R=[R[0],[(R[0][0]+R[1][0])/2,(R[0][1]+R[1][1])/2],R[1],[(R[1][0]+R[2][0])/2,(R[1][1]+R[2][1])/2],R[2]];
+        T=[T[0],(T[0]+T[1])/2,T[1],(T[1]+T[2])/2,T[2]]; m=5; }
+      var inner=[], U=[T[0],T[0],T[0],T[0]];
+      for(j=1;j<=m-4;j++){ inner.push((T[j]+T[j+1]+T[j+2])/3); U.push(inner[j-1]); }
+      U.push(T[m-1],T[m-1],T[m-1],T[m-1]);
+      var A=[], bx=[], by=[];
+      for(k=0;k<m;k++){ var row=[]; for(i=0;i<m;i++) row.push(0);
+        var t=T[k], sp=3;
+        if(k===m-1) sp=m-1; else { while(sp<m-1&&U[sp+1]<=t) sp++; }
+        var N=dxfSplBasis(sp,t,U); for(i=0;i<4;i++) row[sp-3+i]=N[i];
+        A.push(row); bx.push(R[k][0]); by.push(R[k][1]); }
+      for(i=0;i<m;i++){ var pv=A[i][i]; if(Math.abs(pv)<1e-14) pv=1e-14;   // 帯行列（幅 4）。全正値なので軸の入れ替えは要らない
+        for(k=i+1;k<Math.min(m,i+4);k++){ var f=A[k][i]/pv; if(!f) continue;
+          for(j=i;j<Math.min(m,i+4);j++) A[k][j]-=f*A[i][j];
+          bx[k]-=f*bx[i]; by[k]-=f*by[i]; } }
+      var C=[]; for(i=0;i<m;i++) C.push([0,0]);
+      for(i=m-1;i>=0;i--){ var sx=bx[i], sy=by[i];
+        for(j=i+1;j<Math.min(m,i+4);j++){ sx-=A[i][j]*C[j][0]; sy-=A[i][j]*C[j][1]; }
+        C[i]=[sx/A[i][i],sy/A[i][i]]; }
+      C[0]=[R[0][0],R[0][1]]; C[m-1]=[R[m-1][0],R[m-1][1]];   // 端はちょうど元の点（つなぎ目を共有するため）
+      return {knots:inner,ctrl:C}; }
+    // 3 次の B スプラインの基底（span の 4 つ）。Piegl & Tiller A2.2
+    function dxfSplBasis(sp,t,U){ var N=[1,0,0,0], L=[0,0,0,0], Rr=[0,0,0,0], j, r, sv, tmp;
+      for(j=1;j<=3;j++){ L[j]=t-U[sp+1-j]; Rr[j]=U[sp+j]-t; sv=0;
+        for(r=0;r<j;r++){ var den=Rr[r+1]+L[j-r]; tmp=den?N[r]/den:0; N[r]=sv+Rr[r+1]*tmp; sv=L[j-r]*tmp; }
+        N[j]=sv; }
+      return N; }
+    // v1.39 破線（pat＝模様 1 周の長さ）で、短い区間がなだらかに続く線は SPLINE に（Rhino が頂点ごとに模様を描き直すため）
+    function wSpline(layer,sp,ltype,lwm){ var o=ehead('SPLINE',layer,(ltype?p(6,ltype):'')+(lwm?p(370,lwCode(lwm)):''))
+        +p(100,'AcDbSpline')+p(70,8)+p(71,3)+p(72,sp.knots.length)+p(73,sp.ctrl.length)+p(74,0), i;
+      for(i=0;i<sp.knots.length;i++) o+=p(40,sp.knots[i].toFixed(6));
+      for(i=0;i<sp.ctrl.length;i++) o+=p(10,sp.ctrl[i][0].toFixed(4))+p(20,sp.ctrl[i][1].toFixed(4))+p(30,'0.0');
+      return o; }
+    function wPoly(layer,P,closed,ltype,lwm,pat){
+      var spl=(ltype&&pat>0)?dxfSplParts(P,closed,pat):null;
+      if(spl) return wSpline(layer,spl,ltype,lwm);
       // v0.79: 線種付きのポリラインは group 70 に bit 128（線種生成 / AutoCAD の PLINEGEN）を立てる。
       //   OFF だと破線パターンが頂点ごとに先頭から仕切り直され、頂点間隔がダッシュ長より
       //   短い曲線ストロークではギャップが一度も現れず CAD で実線に見える（実測: DASHED_12M の
@@ -8175,10 +8312,10 @@
       if(st.hatch&&st.closed){
         // 塗り(HATCH・透明)は _HATCH レイヤ、輪郭線は通常レイヤ（画面表示と同じ二層）
         dxf+=wHatch(L.name+'_HATCH',st.pts);
-        dxf+=wPoly(L.name,st.pts,true,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm||1);   // v1.33 輪郭線に太さを渡し忘れていた
+        dxf+=wPoly(L.name,st.pts,true,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm||1,st.dash?dashPat(st.dashM||DASH_M):0);   // v1.33 輪郭線に太さを渡し忘れていた
       } else {
         // v1.33 標準（lwm なし）も 370 = 35 をはっきり書く。BYLAYER だと Rhino はレイヤーの 0.35 mm を読まず、細より細く見えた
-        dxf+=wPoly(L.name,st.pts,!!st.closed,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm||1);
+        dxf+=wPoly(L.name,st.pts,!!st.closed,st.dash?dashLt(st.dashM||DASH_M):null,st.lwm||1,st.dash?dashPat(st.dashM||DASH_M):0);   // v1.39 破線は模様の長さも
       }
       // v0.91: 両髭線の髭は**個別のポリライン**として出す。複合線種（線種にシェイプを
       // 埋める方式）は SHX の同梱が要るうえ SXF では分解されるため、受け手で崩れる。
